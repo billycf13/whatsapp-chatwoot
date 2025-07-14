@@ -6,7 +6,7 @@ import path from 'path'
 import fs from 'fs'
 import { Session } from '../models/session.model'
 
-export class BaileysController {
+export class WhatsappController {
     static async loginWithQR(req: Request, res: Response): Promise<any> {
         const sessionId = uuidv4()
         const conn = await ConnectionManager.getConnection(sessionId)
@@ -125,6 +125,17 @@ export class BaileysController {
             res.json({ result })
         } catch (err: any) {
             res.status(500).json({ error: err.message })
+        }
+    }
+
+    async sendMessage(sessionId: string, jid: string, text: string) {
+        const conn = await ConnectionManager.getConnection(sessionId)
+        const msgService = new MessageService(conn)
+        try {
+            const result = await msgService.sendText(jid, text)
+            return result
+        } catch (err: any) {
+            throw err
         }
     }
 

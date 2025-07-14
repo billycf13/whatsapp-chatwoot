@@ -1,17 +1,17 @@
 import { Router } from 'express'
-import { BaileysController } from '../controllers/whatsapp.controller'
+import { WhatsappController } from '../controllers/whatsapp.controller'
 import multer from 'multer'
 
 const upload = multer()
 const router = Router()
 
-router.post('/login/qr', BaileysController.loginWithQR)
-router.post('/login/pairing', BaileysController.loginWithPairingCode)
-router.post('/send/text', BaileysController.sendText)
-router.post('/send/image', upload.array('image'), BaileysController.sendImage)
-router.post('/send/document', upload.array('document'), BaileysController.sendDocument)
-router.post('/logout', BaileysController.logout)
-router.get('/sessions', BaileysController.listSessions)
-router.patch('/session/:sessionId', BaileysController.updateSession)
+router.post('/login/qr', WhatsappController.loginWithQR)
+router.post('/login/pairing', WhatsappController.loginWithPairingCode)
+router.post('/send/text', WhatsappController.sendText)
+router.post('/send/image', upload.array('image'), WhatsappController.sendImage)
+router.post('/send/document', upload.array('document'), WhatsappController.sendDocument)
+router.post('/logout', WhatsappController.logout)
+router.get('/sessions', WhatsappController.listSessions)
+router.patch('/session/:sessionId', WhatsappController.updateSession)
 
 export default router

@@ -131,10 +131,11 @@
       sessionList.innerHTML = '';
       sessions.forEach(session => {
         const tr = document.createElement('tr');
+        const url = window.location.href
         tr.innerHTML = `
           <td>${session.phoneNumber || '-'}</td>
           <td>${session.name || '-'}</td>
-          <td><span class="webhook-url">http://172.29.117.138:3080/webhook/${session.sessionId}</span></td>
+          <td><span class="webhook-url">${url}webhook/${session.sessionId}</span></td>
           <td>
             <form class="inbox-form" onsubmit="updateInboxIdentifier(event, '${session.sessionId}')">
               <input type="text" value="${session.inbox_identifier || ''}" 

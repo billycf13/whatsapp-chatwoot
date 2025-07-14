@@ -15,7 +15,7 @@ export class ChatwootAppApi {
     }
 
     async searchContact(q: string) {
-        const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/contacts?q=${q}`
+        const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/contacts/search?sort=phone_number&q=%2B${q}`
         try {
             const response = await axios.get(url, 
                 {
@@ -39,6 +39,32 @@ export class ChatwootAppApi {
                 content,
                 message_type: messageType
             },
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'api_access_token': this.apiKey
+                }
+            }
+        )
+        return response.data
+    }
+
+    async getConversationId(contact_id: number) {
+        const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/contacts/${contact_id}/conversations`
+        const response = await axios.get(url, 
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'api_access_token': this.apiKey
+                }
+            }
+        )
+        return response.data
+    }
+
+    async showContact(contact_id: number) {
+        const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/contacts/${contact_id}`
+        const response = await axios.get(url, 
             {
                 headers: {
                     'Content-Type': 'application/json',
