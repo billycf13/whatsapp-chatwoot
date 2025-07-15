@@ -30,7 +30,7 @@ export class ChatwootClientApi {
         }
     }
 
-    async craeteConversation(inbox_identifier: string, contact_identifier: string) {
+    async createConversation(inbox_identifier: string, contact_identifier: string) {
         const url = `${this.baseUrl}/public/api/v1/inboxes/${inbox_identifier}/contacts/${contact_identifier}/conversations`
         try {
             const response = await axios.post(url, {

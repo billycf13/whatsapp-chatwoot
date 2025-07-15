@@ -52,7 +52,7 @@ export class ChatwootController {
         try {
             const inbox_identifier = req.body.inbox_identifier
             const contact_identifier = req.body.contact_identifier //source_id
-            const createdConversation = await ChatwootController.chatwootClientApi.craeteConversation(inbox_identifier,contact_identifier)
+            const createdConversation = await ChatwootController.chatwootClientApi.createConversation(inbox_identifier,contact_identifier)
             res.json(createdConversation)
         } catch (error:any) {
             console.error('Error creating conversation:', error)

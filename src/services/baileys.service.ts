@@ -106,7 +106,7 @@ export class BaileysConnection extends EventEmitter{
                 this.handler.handleMessageUpdate(updates)
             })
             this.sock.ev.on('messages.upsert', async (m) => {
-                this.handler.handleMessageUpsert(m.messages)
+                this.handler.handleMessageUpsert(m.messages, this.sessionId)
             })
             this.sock.ev.on('contacts.upsert', async (contacts) => {
                 this.handler.handleContactUpsert(contacts)

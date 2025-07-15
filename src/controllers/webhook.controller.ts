@@ -21,7 +21,7 @@ export class WebhookController {
             const contact_id = Number(event.conversation.contact_inbox.contact_id)
             const showContact = await chatwootAppApi.showContact(contact_id)
             const identifier = showContact.payload.identifier
-            const jid = identifier + '@s.whatsapp.net'
+            const jid = identifier
             const message = event.content
             const contentType = event.content_type
             if (contentType === 'text') {
@@ -33,8 +33,9 @@ export class WebhookController {
             }
             // const sendText = await messageService.sendText(identifier + '@s.whatsapp.net', 'Halo, selamat datang di Chatwoot')
             // console.log(sendText)
-        } else {
+        } else if (event.event ==='message_updated') {
             console.log(event)
         }
+        res.send('Webhook received!')
     }
 }
