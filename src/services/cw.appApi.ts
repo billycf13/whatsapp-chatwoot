@@ -87,4 +87,42 @@ export class ChatwootAppApi {
         )
         return response.data
     }
+
+    async createMessageWithAttachment(
+        conversation_id: number,
+        content: string,
+        attachments: any[] = []
+    ) {
+        const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/conversations/${conversation_id}/messages`
+        
+        try {
+            const FormData = require('form-data')
+            const formData = new FormData()
+            
+            formData.append('content', content)
+            formData.append('message_type', 'incoming')
+            
+            for (const attachment of attachments) {
+                formData.append('attachments[]', attachment.buffer, {
+                    filename: attachment.filename,
+                    contentType: attachment.mimetype
+                })
+            }
+            
+            const response = await axios.post(url, formData, {
+                headers: {
+                    ...formData.getHeaders(),
+                    'api_access_token': this.apiKey
+                },
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity,
+                timeout: 30000
+            })
+            
+            return response.data
+        } catch (error: any) {
+            console.error('Error creating message with attachment via App API:', error.response?.data || error.message)
+            throw error
+        }
+    }
 }
