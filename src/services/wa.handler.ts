@@ -33,7 +33,7 @@ export class WhatsAppHandler {
                     if (message.message?.conversation) {
                         messageContent = message.message.conversation
                     } else if (message.message?.imageMessage) {
-                        messageContent = message.message.imageMessage.caption || '[Gambar]'
+                        messageContent = message.message.imageMessage.caption || ''
                         try {
                             const imageBuffer = await downloadMediaMessage(message, 'buffer', {})
                             attachments.push({
@@ -47,7 +47,7 @@ export class WhatsAppHandler {
                             messageContent = '[Gambar - Gagal diunduh]'
                         }
                     } else if (message.message?.documentMessage) {
-                        messageContent = message.message.documentMessage.caption || '[Dokumen]'
+                        messageContent = message.message.documentMessage.caption || ''
                         try {
                             const docBuffer = await downloadMediaMessage(message, 'buffer', {})
                             attachments.push({
@@ -61,7 +61,7 @@ export class WhatsAppHandler {
                             messageContent = '[Dokumen - Gagal diunduh]'
                         }
                     } else if (message.message?.audioMessage) {
-                        messageContent = '[Audio]'
+                        messageContent = ''
                         try {
                             const audioBuffer = await downloadMediaMessage(message, 'buffer', {})
                             attachments.push({
@@ -75,7 +75,7 @@ export class WhatsAppHandler {
                             messageContent = '[Audio - Gagal diunduh]'
                         }
                     } else if (message.message?.videoMessage) {
-                        messageContent = message.message.videoMessage.caption || '[Video]'
+                        messageContent = message.message.videoMessage.caption || ''
                         try {
                             const videoBuffer = await downloadMediaMessage(message, 'buffer', {})
                             attachments.push({
@@ -89,7 +89,7 @@ export class WhatsAppHandler {
                             messageContent = '[Video - Gagal diunduh]'
                         }
                     } else if (message.message?.stickerMessage) {
-                        messageContent = '[Stiker]'
+                        messageContent = ''
                         try {
                             const stickerBuffer = await downloadMediaMessage(message, 'buffer', {})
                             attachments.push({
