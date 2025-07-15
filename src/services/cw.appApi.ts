@@ -125,4 +125,33 @@ export class ChatwootAppApi {
             throw error
         }
     }
+    
+    async updateMessageStatus(conversation_id: number, message_id: number, status: string) {
+        const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/conversations/${conversation_id}/messages/${message_id}`
+        console.log(`Attempting to update message status: ${url}`, { status })
+        
+        try {
+            const response = await axios.patch(url, 
+                {
+                    status: status
+                },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'api_access_token': this.apiKey
+                    }
+                }
+            )
+            console.log('Chatwoot API response:', response.status, response.data)
+            return response.data
+        } catch (error: any) {
+            console.error('Error updating message status:', {
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                data: error.response?.data,
+                message: error.message
+            })
+            throw error
+        }
+    }
 }

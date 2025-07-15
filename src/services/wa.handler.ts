@@ -5,17 +5,121 @@ import { Session } from '../models/session.model'
 
 const chatwootAppApi = new ChatwootAppApi()
 const chatwootClientApi = new ChatwootClientApi()
-export class WhatsAppHandler {
-    constructor() {}
 
-    public handleMessageUpdate(updates: WAMessageUpdate[]) {
+export class WhatsAppHandler {
+    private static instance: WhatsAppHandler
+    // Mapping untuk menyimpan relasi messageId WhatsApp dengan Chatwoot
+    private messageMapping = new Map<string, { conversation_id: number, message_id: number, phone: string, lastStatus?: number }>()
+    
+    private constructor() {}
+    
+    public static getInstance(): WhatsAppHandler {
+        if (!WhatsAppHandler.instance) {
+            WhatsAppHandler.instance = new WhatsAppHandler()
+        }
+        return WhatsAppHandler.instance
+    }
+
+    public async handleMessageUpdate(updates: WAMessageUpdate[]) {
         for (const update of updates) {
+            const messageId = update.key.id
+            const status = update.update?.status
+            
             console.log('Message Update:', {
-                messageId: update.key.id,
+                messageId: messageId,
                 status: update.update,
             })
-            // Implementasi logika untuk update status pesan
+            
+            if (status && messageId) {
+                await this.updateChatwootMessageStatus(messageId, status)
+            }
         }
+    }
+    
+    private async updateChatwootMessageStatus(whatsappMessageId: string, status: number) {
+        try {
+            // Cari mapping pesan di cache
+            const messageInfo = this.messageMapping.get(whatsappMessageId)
+            
+            if (!messageInfo) {
+                console.log('Message mapping not found for:', whatsappMessageId)
+                console.log('Available mappings:', Array.from(this.messageMapping.keys()))
+                return
+            }
+            
+            // Cek apakah status baru lebih tinggi dari status terakhir
+            if (messageInfo.lastStatus && status <= messageInfo.lastStatus) {
+                console.log(`Ignoring status downgrade: ${whatsappMessageId} from ${messageInfo.lastStatus} to ${status}`)
+                return
+            }
+            
+            // Mapping status WhatsApp ke Chatwoot
+            let chatwootStatus: string
+            switch (status) {
+                case 1: // Pending
+                    chatwootStatus = 'pending'
+                    break
+                case 2: // Sent/Delivered
+                    chatwootStatus = 'Sending'
+                    break
+                case 3: // Received
+                    chatwootStatus = 'Delivered'
+                    break
+                case 4: // Read
+                    chatwootStatus = 'read'
+                    break
+                default:
+                    console.log('Unknown status:', status)
+                    return
+            }
+            
+            console.log(`Updating message status in Chatwoot: ${whatsappMessageId} -> ${chatwootStatus} (from status ${messageInfo.lastStatus || 'none'} to ${status})`)
+            
+            // Update status terakhir di mapping
+            messageInfo.lastStatus = status
+            this.messageMapping.set(whatsappMessageId, messageInfo)
+            
+            // Update status di Chatwoot (jika API tersedia)
+            try {
+                await chatwootAppApi.updateMessageStatus(
+                    messageInfo.conversation_id,
+                    messageInfo.message_id,
+                    chatwootStatus
+                )
+                console.log(`Message status updated successfully: ${chatwootStatus}`)
+            } catch (apiError) {
+                console.log('Message status update API not available, logging status only:', chatwootStatus)
+            }
+            
+        } catch (error) {
+            console.error('Error updating message status in Chatwoot:', error)
+        }
+    }
+    
+    // Method untuk menyimpan mapping ketika mengirim pesan dari Chatwoot ke WhatsApp
+    public storeMessageMapping(whatsappMessageId: string, conversation_id: number, message_id: number, phone: string) {
+        console.log(`Storing message mapping: ${whatsappMessageId} -> conv:${conversation_id}, msg:${message_id}, phone:${phone}`)
+        this.messageMapping.set(whatsappMessageId, {
+            conversation_id,
+            message_id,
+            phone,
+            lastStatus: 1 // Set status awal sebagai pending
+        })
+        
+        // Auto cleanup setelah 24 jam
+        setTimeout(() => {
+            this.messageMapping.delete(whatsappMessageId)
+            console.log(`Cleaned up message mapping: ${whatsappMessageId}`)
+        }, 24 * 60 * 60 * 1000)
+    }
+    
+    // Method untuk debugging
+    public getMappingCount(): number {
+        return this.messageMapping.size
+    }
+    
+    public getAllMappings(): string[] {
+        return Array.from(this.messageMapping.keys())
     }
 
     public async handleMessageUpsert(messages: WAMessage[], sessionId: string) {

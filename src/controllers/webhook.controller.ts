@@ -4,6 +4,7 @@ import { ChatwootAppApi } from '../services/cw.appApi'
 import { MessageService } from '../services/wa.message.serive'
 import { ConnectionManager } from '../services/wa.connection.manager'
 import { WhatsappController } from '../controllers/whatsapp.controller'
+import { WhatsAppHandler } from '../services/wa.handler'
 import axios from 'axios'
 import * as path from 'path'
 
@@ -123,11 +124,18 @@ export class WebhookController {
             const jid = identifier
             const message = event.content
             const contentType = event.content_type
+            const conversation_id = event.conversation.id
+            const message_id = event.id
+            
+            // Dapatkan instance WhatsAppHandler
+            const waHandler = WhatsAppHandler.getInstance()
             
             try {
                 // Dapatkan koneksi WhatsApp
                 const conn = await ConnectionManager.getConnection(sessionId)
                 const msgService = new MessageService(conn)
+                
+                let sendResult: any = null
                 
                 // Periksa attachment terlebih dahulu
                 if (event.attachments && event.attachments.length > 0) {
@@ -176,74 +184,93 @@ export class WebhookController {
                             
                             // Tentukan jenis file dan kirim sesuai tipe
                             if (finalMimeType.startsWith('image/')) {
-                                // Kirim sebagai gambar dengan atau tanpa caption
                                 if (message && message.trim()) {
                                     console.log('Sending image with caption:', fileName, 'to', jid, 'caption:', message)
-                                    const result = await msgService.sendImage(jid, fileBuffer, message)
-                                    console.log('Image with caption sent:', result)
+                                    sendResult = await msgService.sendImage(jid, fileBuffer, message)
+                                    console.log('Image with caption sent:', sendResult)
                                 } else {
                                     console.log('Sending image without caption:', fileName, 'to', jid)
-                                    const result = await msgService.sendImage(jid, fileBuffer)
-                                    console.log('Image without caption sent:', result)
+                                    sendResult = await msgService.sendImage(jid, fileBuffer)
+                                    console.log('Image without caption sent:', sendResult)
                                 }
                                 
                             } else if (finalMimeType.startsWith('video/')) {
-                                // Kirim sebagai video dengan atau tanpa caption
                                 if (message && message.trim()) {
                                     console.log('Sending video with caption:', fileName, 'to', jid, 'caption:', message)
-                                    const result = await msgService.sendVideo(jid, fileBuffer, message)
-                                    console.log('Video with caption sent:', result)
+                                    sendResult = await msgService.sendVideo(jid, fileBuffer, message)
+                                    console.log('Video with caption sent:', sendResult)
                                 } else {
                                     console.log('Sending video without caption:', fileName, 'to', jid)
-                                    const result = await msgService.sendVideo(jid, fileBuffer)
-                                    console.log('Video without caption sent:', result)
+                                    sendResult = await msgService.sendVideo(jid, fileBuffer)
+                                    console.log('Video without caption sent:', sendResult)
                                 }
                                 
                             } else if (finalMimeType.startsWith('audio/')) {
-                                // Kirim sebagai audio (tidak mendukung caption)
                                 console.log('Sending audio:', fileName, 'to', jid)
-                                const result = await msgService.sendAudio(jid, fileBuffer)
-                                console.log('Audio sent:', result)
+                                sendResult = await msgService.sendAudio(jid, fileBuffer)
+                                console.log('Audio sent:', sendResult)
                                 
-                                // Kirim teks terpisah jika ada message untuk audio
                                 if (message && message.trim()) {
                                     console.log('Sending text message after audio:', message)
                                     await msgService.sendText(jid, message)
                                 }
                                 
                             } else {
-                                // Kirim sebagai document (tidak mendukung caption)
                                 console.log('Sending document:', fileName, 'to', jid)
-                                const result = await msgService.sendDocument(jid, fileBuffer, fileName, finalMimeType)
-                                console.log('Document sent:', result)
+                                sendResult = await msgService.sendDocument(jid, fileBuffer, fileName, finalMimeType)
+                                console.log('Document sent:', sendResult)
                                 
-                                // Kirim teks terpisah jika ada message untuk document
                                 if (message && message.trim()) {
                                     console.log('Sending text message after document:', message)
                                     await msgService.sendText(jid, message)
                                 }
                             }
                             
+                            // Simpan mapping setelah berhasil mengirim
+                            if (sendResult && sendResult.key && sendResult.key.id) {
+                                const phone = jid.split('@')[0]
+                                waHandler.storeMessageMapping(
+                                    sendResult.key.id,
+                                    conversation_id,
+                                    message_id,
+                                    phone
+                                )
+                                console.log('Message mapping stored for attachment:', sendResult.key.id)
+                            }
+                            
                         } catch (attachmentError) {
                             console.error('Error processing attachment:', attachment.file_name, attachmentError)
-                            // Kirim pesan error sebagai text
                             await msgService.sendText(jid, `❌ Gagal mengirim file: ${attachment.file_name}`)
                         }
                     }
                     
                 } else if (contentType === 'text' && message && message.trim()) {
-                    // Kirim pesan text saja (tanpa attachment) dan pastikan tidak kosong
+                    // Kirim pesan text saja
                     console.log('Sending text only:', sessionId, jid, message)
-                    const sendText = await msgService.sendText(jid, message)
-                    console.log('Text sent:', sendText)
+                    sendResult = await msgService.sendText(jid, message)
+                    console.log('Text sent:', sendResult)
+                    
+                    // Simpan mapping setelah berhasil mengirim text
+                    if (sendResult && sendResult.key && sendResult.key.id) {
+                        const phone = jid.split('@')[0]
+                        waHandler.storeMessageMapping(
+                            sendResult.key.id,
+                            conversation_id,
+                            message_id,
+                            phone
+                        )
+                        console.log('Message mapping stored for text:', sendResult.key.id)
+                    }
                     
                 } else {
                     console.log('Unsupported content type or empty message:', contentType, message)
-                    // Kirim pesan fallback hanya jika benar-benar tidak ada konten
                     if (!event.attachments || event.attachments.length === 0) {
                         await msgService.sendText(jid, '❌ Jenis pesan tidak didukung')
                     }
                 }
+                
+                // Debug: tampilkan jumlah mapping yang tersimpan
+                console.log(`Total message mappings stored: ${waHandler.getMappingCount()}`)
                 
             } catch (error) {
                 console.error('Error in webhook handler:', error)
