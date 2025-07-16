@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid'
 import path from 'path'
 import fs from 'fs'
 import { Session } from '../models/session.model'
+import { ChatwootConfig } from '../models/cwConfig.model'
 
 export class WhatsappController {
     static async loginWithQR(req: Request, res: Response): Promise<any> {
@@ -75,7 +76,6 @@ export class WhatsappController {
                         sessionId: session.sessionId,
                         phoneNumber: session.phoneNumber,
                         name: session.name,
-                        inbox_identifier: session.inbox_identifier,
                         user: sock?.user
                     }
                 })

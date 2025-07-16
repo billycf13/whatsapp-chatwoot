@@ -1,100 +1,183 @@
-import dotenv from 'dotenv'
 import axios from 'axios'
+import { ChatwootConfig } from '../models/cwConfig.model'
 
-dotenv.config()
+interface ChatwootAppConfig {
+    baseUrl: string
+    agentApiToken: string
+    botApiToken: string
+    accountId: string
+}
+
+interface AttachmentData {
+    buffer: Buffer
+    filename: string
+    mimetype: string
+}
+
+interface ApiResponse {
+    success: boolean
+    message: string
+    data?: any
+}
 
 export class ChatwootAppApi {
-    private baseUrl : string
-    private apiKey : string
-    private syncAgentApi: string
+    private baseUrl: string
+    private agentApiToken: string
+    private botApiToken: string
     private accountId: string
+    private initialized: boolean = false
 
-    constructor () {
-        this.baseUrl = process.env.CHATWOOT_BASE_URL!
-        this.apiKey = process.env.CHATWOOT_API_KEY!
-        this.syncAgentApi = process.env.CHATWOOT_SYNCAGENT_API_KEY!
-        this.accountId = process.env.CHATWOOT_ACCOUNT_ID!
+    private constructor(config: ChatwootAppConfig) {
+        this.baseUrl = config.baseUrl
+        this.agentApiToken = config.agentApiToken
+        this.botApiToken = config.botApiToken
+        this.accountId = config.accountId
+        this.initialized = true
+    }
+
+    static async fromSessionId(sessionId: string): Promise<ChatwootAppApi | ApiResponse> {
+        try {
+            const config = await ChatwootConfig.findOne({ sessionId })
+            if (!config) {
+                return {
+                    success: false,
+                    message: 'Konfigurasi Chatwoot belum diset untuk session ini. Silakan set konfigurasi terlebih dahulu.'
+                }
+            }
+
+            if (!config.baseUrl || !config.agentApiToken || !config.botApiToken || !config.accountId) {
+                return {
+                    success: false,
+                    message: 'Konfigurasi Chatwoot tidak lengkap. Pastikan semua field telah diisi (baseUrl, agentApiToken, botApiToken, accountId).'
+                }
+            }
+
+            return new ChatwootAppApi({
+                baseUrl: config.baseUrl,
+                agentApiToken: config.agentApiToken,
+                botApiToken: config.botApiToken,
+                accountId: config.accountId
+            })
+        } catch (error) {
+            console.error('Error initializing ChatwootAppApi:', error)
+            return {
+                success: false,
+                message: 'Gagal menginisialisasi ChatwootAppApi. Periksa koneksi database.'
+            }
+        }
+    }
+
+    private ensureInitialized(): void {
+        if (!this.initialized) {
+            throw new Error('ChatwootAppApi not properly initialized. Use fromSessionId() method.')
+        }
     }
 
     async searchContact(q: string) {
-        const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/contacts/search?sort=phone_number&q=${q}`
+        this.ensureInitialized()
+        const encodedQuery = encodeURIComponent(q)
+        const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/contacts/search?sort=phone_number&q=${encodedQuery}`
+        
         try {
-            const response = await axios.get(url, 
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'api_access_token': this.apiKey
-                    }    
-                }
-            )
+            const response = await axios.get(url, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'api_access_token': this.agentApiToken
+                },
+                timeout: 10000
+            })
             return response.data
-        } catch (error) {
-            console.error('Error fetching contacts:', error)
+        } catch (error: any) {
+            console.error('Error fetching contacts:', error.response?.data || error.message)
             throw error
         }
     }
 
-    async createMessage(conversation_id: number, content: string, messageType: string) {
+    async createMessage(conversation_id: number, content: string, messageType: string = 'outgoing') {
+        this.ensureInitialized()
         const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/conversations/${conversation_id}/messages`
-        const response = await axios.post(url, 
-            {
+        
+        try {
+            const response = await axios.post(url, {
                 content,
                 message_type: messageType
-            },
-            {
+            }, {
                 headers: {
                     'Content-Type': 'application/json',
-                    'api_access_token': this.syncAgentApi
-                }
-            }
-        )
-        return response.data
+                    'api_access_token': this.botApiToken
+                },
+                timeout: 10000
+            })
+            return response.data
+        } catch (error: any) {
+            console.error('Error creating message:', error.response?.data || error.message)
+            throw error
+        }
     }
 
     async getConversationId(contact_id: number) {
+        this.ensureInitialized()
         const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/contacts/${contact_id}/conversations`
-        const response = await axios.get(url, 
-            {
+        
+        try {
+            const response = await axios.get(url, {
                 headers: {
                     'Content-Type': 'application/json',
-                    'api_access_token': this.apiKey
-                }
-            }
-        )
-        return response.data
+                    'api_access_token': this.agentApiToken
+                },
+                timeout: 10000
+            })
+            return response.data
+        } catch (error: any) {
+            console.error('Error getting conversation ID:', error.response?.data || error.message)
+            throw error
+        }
     }
 
     async showContact(contact_id: number) {
+        this.ensureInitialized()
         const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/contacts/${contact_id}`
-        const response = await axios.get(url, 
-            {
+        
+        try {
+            const response = await axios.get(url, {
                 headers: {
                     'Content-Type': 'application/json',
-                    'api_access_token': this.apiKey
-                }
-            }
-        )
-        return response.data
+                    'api_access_token': this.agentApiToken
+                },
+                timeout: 10000
+            })
+            return response.data
+        } catch (error: any) {
+            console.error('Error showing contact:', error.response?.data || error.message)
+            throw error
+        }
     }
 
     async getContactConversation(contact_id: number) {
+        this.ensureInitialized()
         const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/contacts/${contact_id}/conversations`
-        const response = await axios.get(url,
-            {
+        
+        try {
+            const response = await axios.get(url, {
                 headers: {
                     'Content-Type': 'application/json',
-                    'api_access_token': this.apiKey
-                }
-            }
-        )
-        return response.data
+                    'api_access_token': this.agentApiToken
+                },
+                timeout: 10000
+            })
+            return response.data
+        } catch (error: any) {
+            console.error('Error getting contact conversation:', error.response?.data || error.message)
+            throw error
+        }
     }
 
     async createMessageWithAttachment(
         conversation_id: number,
         content: string,
-        attachments: any[] = []
+        attachments: AttachmentData[] = []
     ) {
+        this.ensureInitialized()
         const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/conversations/${conversation_id}/messages`
         
         try {
@@ -105,6 +188,10 @@ export class ChatwootAppApi {
             formData.append('message_type', 'outgoing')
             
             for (const attachment of attachments) {
+                if (!Buffer.isBuffer(attachment.buffer)) {
+                    throw new Error('Invalid buffer for attachment')
+                }
+                
                 formData.append('attachments[]', attachment.buffer, {
                     filename: attachment.filename,
                     contentType: attachment.mimetype,
@@ -114,7 +201,7 @@ export class ChatwootAppApi {
             const response = await axios.post(url, formData, {
                 headers: {
                     ...formData.getHeaders(),
-                    'api_access_token': this.syncAgentApi
+                    'api_access_token': this.botApiToken
                 },
                 maxContentLength: Infinity,
                 maxBodyLength: Infinity,
@@ -129,22 +216,21 @@ export class ChatwootAppApi {
     }
     
     async updateMessageStatus(conversation_id: number, message_id: number, status: string) {
+        this.ensureInitialized()
         const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/conversations/${conversation_id}/messages/${message_id}`
-        console.log(`Attempting to update message status: ${url}`, { status })
         
         try {
-            const response = await axios.patch(url, 
-                {
-                    status: status
+            const response = await axios.patch(url, {
+                status: status
+            }, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'api_access_token': this.agentApiToken
                 },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'api_access_token': this.apiKey
-                    }
-                }
-            )
-            console.log('Chatwoot API response:', response.status, response.data)
+                timeout: 10000
+            })
+            
+            console.log('Message status updated successfully:', response.data)
             return response.data
         } catch (error: any) {
             console.error('Error updating message status:', {

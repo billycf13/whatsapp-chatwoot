@@ -1,64 +1,120 @@
 import axios from 'axios'
-import dotenv from 'dotenv'
 import FormData from 'form-data'
+import { ChatwootConfig } from '../models/cwConfig.model'
 
-dotenv.config()
+interface ContactData {
+    identifier: string
+    name: string
+    phone_number: string
+}
+
+interface AttachmentData {
+    buffer: Buffer
+    filename: string
+    mimetype: string
+}
+
+interface ApiResponse {
+    success: boolean
+    message: string
+    data?: any
+}
 
 export class ChatwootClientApi {
-    private baseUrl : string
+    private baseUrl: string
+    private initialized: boolean = false
 
-    constructor () {
-        this.baseUrl = process.env.CHATWOOT_BASE_URL!
+    private constructor(baseUrl: string) {
+        this.baseUrl = baseUrl
+        this.initialized = true
     }
 
-    async createContact(inboxIdentifier: string, contact: {
-        identifier: string,
-        name: string,
-        phone_number: string
-    }) {
+    static async fromSessionId(sessionId: string): Promise<ChatwootClientApi | ApiResponse> {
+        try {
+            const config = await ChatwootConfig.findOne({ sessionId })
+            if (!config) {
+                return {
+                    success: false,
+                    message: 'Konfigurasi Chatwoot belum diset untuk session ini. Silakan set konfigurasi terlebih dahulu.'
+                }
+            }
+
+            if (!config.baseUrl) {
+                return {
+                    success: false,
+                    message: 'Base URL Chatwoot belum diset. Silakan lengkapi konfigurasi.'
+                }
+            }
+
+            return new ChatwootClientApi(config.baseUrl)
+        } catch (error) {
+            console.error('Error initializing ChatwootClientApi:', error)
+            return {
+                success: false,
+                message: 'Gagal menginisialisasi ChatwootClientApi. Periksa koneksi database.'
+            }
+        }
+    }
+
+    private ensureInitialized(): void {
+        if (!this.initialized) {
+            throw new Error('ChatwootClientApi not properly initialized. Use fromSessionId() method.')
+        }
+    }
+
+    async createContact(inboxIdentifier: string, contact: ContactData) {
+        this.ensureInitialized()
+        
         try {
             const response = await axios.post(
-                `${this.baseUrl}/public/api/v1/inboxes/${inboxIdentifier}/contacts`,
+                `${this.baseUrl}/public/api/v1/inboxes/${encodeURIComponent(inboxIdentifier)}/contacts`,
                 contact,
-                 {
-                headers: {'Content-Type': 'application/json'}
+                {
+                    headers: { 'Content-Type': 'application/json' },
+                    timeout: 10000
                 }
             )
             return response.data
-        } catch (error) {
-            console.error('Error creating contact in Chatwoot: ', error)
+        } catch (error: any) {
+            console.error('Error creating contact in Chatwoot:', error.response?.data || error.message)
             throw error
         }
     }
 
     async createConversation(inbox_identifier: string, contact_identifier: string) {
-        const url = `${this.baseUrl}/public/api/v1/inboxes/${inbox_identifier}/contacts/${contact_identifier}/conversations`
+        this.ensureInitialized()
+        const url = `${this.baseUrl}/public/api/v1/inboxes/${encodeURIComponent(inbox_identifier)}/contacts/${encodeURIComponent(contact_identifier)}/conversations`
+        
         try {
-            const response = await axios.post(url, {
+            const response = await axios.post(url, {}, {
                 headers: {
                     'Content-Type': 'application/json'
-                }
+                },
+                timeout: 10000
             })
             return response.data
-        } catch (error) {
-            console.log('Error creating conversation in Chatwoot: ',error)
+        } catch (error: any) {
+            console.error('Error creating conversation in Chatwoot:', error.response?.data || error.message)
             throw error
         }
     }
 
     async createMessage(inbox_identifier: string, contact_identifier: string, conversation_id: number, content: string) {
-        const url = `${this.baseUrl}/public/api/v1/inboxes/${inbox_identifier}/contacts/${contact_identifier}/conversations/${conversation_id}/messages`
+        this.ensureInitialized()
+        const url = `${this.baseUrl}/public/api/v1/inboxes/${encodeURIComponent(inbox_identifier)}/contacts/${encodeURIComponent(contact_identifier)}/conversations/${conversation_id}/messages`
+        
         try {
             const response = await axios.post(url, {
                 content
             }, {
                 headers: {
                     'Content-Type': 'application/json'
-                }
+                },
+                timeout: 10000
             })
             return response.data
-        } catch (error) {
-            console.log('Error creating message in Chatwoot: ',error)
+        } catch (error: any) {
+            console.error('Error creating message in Chatwoot:', error.response?.data || error.message)
             throw error
         }
     }
@@ -68,23 +124,23 @@ export class ChatwootClientApi {
         contact_identifier: string,
         conversation_id: number,
         content: string,
-        attachments: any[] = []
+        attachments: AttachmentData[] = []
     ) {
-        const url = `${this.baseUrl}/public/api/v1/inboxes/${inbox_identifier}/contacts/${contact_identifier}/conversations/${conversation_id}/messages`
+        this.ensureInitialized()
         
         if (attachments.length === 0) {
             return this.createMessage(inbox_identifier, contact_identifier, conversation_id, content)
         }
 
+        const url = `${this.baseUrl}/public/api/v1/inboxes/${encodeURIComponent(inbox_identifier)}/contacts/${encodeURIComponent(contact_identifier)}/conversations/${conversation_id}/messages`
+        
         try {
-            // Coba kirim satu file per request
             const results = []
             
             for (const attachment of attachments) {
                 const formData = new FormData()
                 formData.append('content', content)
                 
-                // Pastikan buffer valid
                 if (!Buffer.isBuffer(attachment.buffer)) {
                     throw new Error('Invalid buffer for attachment')
                 }
@@ -105,13 +161,22 @@ export class ChatwootClientApi {
                 results.push(response.data)
             }
             
-            return results[0] // Return first result
+            return results[0]
         } catch (error: any) {
-            console.log('Error creating message with attachment:', error.response?.data || error.message)
+            console.error('Error creating message with attachment:', error.response?.data || error.message)
             
             // Fallback: kirim sebagai text saja
-            return this.createMessage(inbox_identifier, contact_identifier, conversation_id, 
-                `${content}\n\n[File attachment gagal dikirim: ${attachments[0]?.filename}]`)
+            try {
+                return await this.createMessage(
+                    inbox_identifier, 
+                    contact_identifier, 
+                    conversation_id, 
+                    `${content}\n\n[File attachment gagal dikirim: ${attachments[0]?.filename}]`
+                )
+            } catch (fallbackError) {
+                console.error('Fallback message creation also failed:', fallbackError)
+                throw error // Throw original error
+            }
         }
     }
 }

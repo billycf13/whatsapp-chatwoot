@@ -13,10 +13,6 @@ const sessionSchema = new mongoose.Schema({
         index: true
     },
     name: String,
-    inbox_identifier: {
-        type: String,
-        sparse: true
-    }
 }, {
     timestamps: true
 })

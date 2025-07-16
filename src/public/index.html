@@ -1,265 +1,200 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WhatsApp Baileys Frontend</title>
-  <style>
-    body { font-family: Arial, sans-serif; background: #f7f7f7; margin: 0; padding: 0; }
-    .container { max-width: 1200px; margin: 40px auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 24px; }
-    h2 { margin-top: 0; color: #2c3e50; }
-    form { margin-bottom: 24px; }
-    label { display: block; margin-bottom: 6px; color: #34495e; }
-    input, button { width: 100%; padding: 8px; margin-bottom: 12px; border-radius: 4px; border: 1px solid #ddd; }
-    button { background: #2ecc71; color: #fff; border: none; cursor: pointer; transition: background 0.3s; }
-    button:hover { background: #27ae60; }
-    .qr { text-align: center; margin: 16px 0; padding: 20px; border: 1px dashed #ddd; border-radius: 8px; }
-    .sessions { margin-top: 32px; }
-    .status { margin: 16px 0; padding: 10px; border-radius: 4px; background: #f8f9fa; color: #2c3e50; }
-    .hidden { display: none; }
-    
-    /* Tabel Styling */
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-      background: white;
-    }
-    th, td {
-      padding: 12px;
-      text-align: left;
-      border-bottom: 1px solid #ddd;
-    }
-    th {
-      background: #f8f9fa;
-      color: #2c3e50;
-      font-weight: 600;
-    }
-    tr:hover { background: #f5f6fa; }
-    
-    /* Form dalam tabel */
-    .inbox-form {
-      display: flex;
-      gap: 8px;
-    }
-    .inbox-form input {
-      margin: 0;
-      flex: 1;
-    }
-    .inbox-form button {
-      width: auto;
-      margin: 0;
-      padding: 8px 16px;
-    }
-    
-    /* Webhook URL */
-    .webhook-url {
-      font-family: monospace;
-      padding: 4px 8px;
-      background: #f8f9fa;
-      border-radius: 4px;
-      font-size: 0.9em;
-    }
-    
-    /* Responsive */
-    @media (max-width: 768px) {
-      .container { margin: 20px; padding: 16px; }
-      th, td { padding: 8px; }
-      .webhook-url { word-break: break-all; }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Chatwoot Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
-  <div class="container">
-    <h2>Login WhatsApp (Baileys)</h2>
-    <form id="login-qr-form">
-      <button type="submit">Login dengan QR Code</button>
-    </form>
-    <div class="qr hidden" id="qr-area">
-      <div id="qr-text"></div>
-      <canvas id="qr-canvas"></canvas>
+    <div class="dashboard">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fab fa-whatsapp"></i>
+                    <span>WhatsApp Chatwoot</span>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-icon" id="refresh-btn">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <div class="user-menu">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <nav class="sidebar-nav">
+                <ul>
+                    <li>
+                        <a href="#" class="nav-link active" data-page="whatsapp">
+                            <i class="fab fa-whatsapp"></i>
+                            <span>WhatsApp</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="nav-link" data-page="chatwoot">
+                            <i class="fas fa-comments"></i>
+                            <span>Chatwoot Config</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- WhatsApp Page -->
+            <div class="page" id="whatsapp-page">
+                <div class="page-header">
+                    <h1>WhatsApp Sessions</h1>
+                    <button class="btn btn-primary" id="add-session-btn">
+                        <i class="fas fa-plus"></i>
+                        Add Session
+                    </button>
+                </div>
+                
+                <div class="sessions-grid" id="sessions-container">
+                    <!-- Sessions will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Chatwoot Page -->
+            <div class="page hidden" id="chatwoot-page">
+                <div class="page-header">
+                    <h1>Chatwoot Configurations</h1>
+                    <button class="btn btn-primary" id="add-config-btn">
+                        <i class="fas fa-plus"></i>
+                        Add Configuration
+                    </button>
+                </div>
+                
+                <div class="configs-grid" id="configs-container">
+                    <!-- Configurations will be loaded here -->
+                </div>
+            </div>
+        </main>
     </div>
-    <form id="login-pairing-form">
-      <label for="phoneNumber">Login dengan Pairing Code</label>
-      <input type="text" id="phoneNumber" placeholder="Nomor HP (628xxxx)">
-      <button type="submit">Login Pairing</button>
-    </form>
-    <div class="status" id="status"></div>
-    <div class="sessions">
-      <h3>Session Aktif</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Phone Number</th>
-            <th>Name</th>
-            <th>Webhook URL</th>
-            <th>Inbox Identifier</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="session-list">
-          <!-- Session data akan ditampilkan di sini -->
-        </tbody>
-      </table>
+
+    <!-- Login Modal -->
+    <div class="modal" id="login-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add WhatsApp Session</h3>
+                <button class="modal-close" id="close-login-modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="login-tabs">
+                    <button class="tab-btn active" data-tab="qr">QR Code</button>
+                    <button class="tab-btn" data-tab="pairing">Pairing Code</button>
+                </div>
+                
+                <div class="tab-content" id="qr-tab">
+                    <div class="qr-section">
+                        <button class="btn btn-primary" id="generate-qr-btn">
+                            <i class="fas fa-qrcode"></i>
+                            Generate QR Code
+                        </button>
+                        <div class="qr-display" id="qr-display">
+                            <canvas id="qr-canvas"></canvas>
+                            <p class="qr-instruction">Scan this QR code with WhatsApp</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content hidden" id="pairing-tab">
+                    <form id="pairing-form">
+                        <div class="form-group">
+                            <label for="phone-number">Phone Number</label>
+                            <input type="text" id="phone-number" placeholder="628xxxxxxxxx" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-mobile-alt"></i>
+                            Generate Pairing Code
+                        </button>
+                        <div class="pairing-code-display" id="pairing-code-display">
+                            <div class="pairing-code" id="pairing-code"></div>
+                            <p class="pairing-instruction">Enter this code in WhatsApp</p>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
     </div>
-  </div>
-  <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
-  <script>
-    const loginQrForm = document.getElementById('login-qr-form');
-    const loginPairingForm = document.getElementById('login-pairing-form');
-    const phoneNumberInput = document.getElementById('phoneNumber');
-    const qrArea = document.getElementById('qr-area');
-    const qrText = document.getElementById('qr-text');
-    const qrCanvas = document.getElementById('qr-canvas');
-    const statusDiv = document.getElementById('status');
-    const sessionList = document.getElementById('session-list');
 
-    let sessions = [];
-    let lastSessionId = null;
+    <!-- Config Modal -->
+    <div class="modal" id="config-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="config-modal-title">Add Chatwoot Configuration</h3>
+                <button class="modal-close" id="close-config-modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="config-form">
+                    <div class="form-group">
+                        <label for="session-select">WhatsApp Session</label>
+                        <select id="session-select" required>
+                            <option value="">Select Session</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="base-url">Chatwoot Base URL</label>
+                        <input type="url" id="base-url" placeholder="https://your-chatwoot.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="api-key">API Key</label>
+                        <input type="text" id="api-key" placeholder="Your API Key" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="sync-agent-api-key">Sync Agent API Key</label>
+                        <input type="text" id="sync-agent-api-key" placeholder="Sync Agent API Key" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="account-id">Account ID</label>
+                        <input type="number" id="account-id" placeholder="Account ID" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="inbox-identifier">Inbox Identifier</label>
+                        <input type="text" id="inbox-identifier" placeholder="Inbox Identifier" required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="test-config-btn">
+                            <i class="fas fa-vial"></i>
+                            Test Connection
+                        </button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i>
+                            Save Configuration
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
-    function renderQR(qr) {
-      qrArea.classList.remove('hidden');
-      qrText.textContent = qr;
-      new QRious({
-        element: qrCanvas,
-        value: qr,
-        size: 250
-      });
-    }
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Loading...</p>
+        </div>
+    </div>
 
-    function renderSessions() {
-      sessionList.innerHTML = '';
-      sessions.forEach(session => {
-        const tr = document.createElement('tr');
-        const url = window.location.href
-        tr.innerHTML = `
-          <td>${session.phoneNumber || '-'}</td>
-          <td>${session.name || '-'}</td>
-          <td><span class="webhook-url">${url}webhook/${session.sessionId}</span></td>
-          <td>
-            <form class="inbox-form" onsubmit="updateInboxIdentifier(event, '${session.sessionId}')">
-              <input type="text" value="${session.inbox_identifier || ''}" 
-                     placeholder="Masukkan Inbox Identifier"
-                     name="inbox_identifier">
-              <button type="submit">Simpan</button>
-            </form>
-          </td>
-          <td>
-            <button onclick="logoutSession('${session.sessionId}')"
-                    style="background: #e74c3c;">Logout</button>
-          </td>
-        `;
-        sessionList.appendChild(tr);
-      });
-    }
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toast-container"></div>
 
-    async function updateInboxIdentifier(event, sessionId) {
-      event.preventDefault();
-      const form = event.target;
-      const inboxIdentifier = form.inbox_identifier.value.trim();
-      
-      try {
-        const res = await fetch(`/whatsapp/session/${sessionId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ inbox_identifier: inboxIdentifier })
-        });
-        
-        if (res.ok) {
-          statusDiv.textContent = 'Inbox identifier berhasil diupdate';
-          await fetchSessions(); // Refresh daftar session
-        } else {
-          throw new Error('Gagal update inbox identifier');
-        }
-      } catch (error) {
-        statusDiv.textContent = error.message;
-      }
-    }
-
-    loginQrForm.onsubmit = async (e) => {
-      e.preventDefault();
-      statusDiv.textContent = 'Meminta QR code...';
-      qrArea.classList.add('hidden');
-      try {
-        const res = await fetch('/whatsapp/login/qr', { 
-          method: 'POST', 
-          headers: { 'Content-Type': 'application/json' }
-        });
-        const data = await res.json();
-        if (data.qr) {
-          renderQR(data.qr);
-          statusDiv.textContent = 'Scan QR code di WhatsApp.';
-        } else {
-          throw new Error(data.error || 'Gagal mendapatkan QR code');
-        }
-      } catch (error) {
-        statusDiv.textContent = error.message;
-      }
-    };
-
-    loginPairingForm.onsubmit = async (e) => {
-      e.preventDefault();
-      const phoneNumber = phoneNumberInput.value.trim();
-      if (!phoneNumber) {
-        statusDiv.textContent = 'Nomor HP wajib diisi';
-        return;
-      }
-      
-      statusDiv.textContent = 'Meminta pairing code...';
-      try {
-        const res = await fetch('/whatsapp/login/pairing', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phoneNumber })
-        });
-        const data = await res.json();
-        if (data.pairingCode) {
-          statusDiv.textContent = 'Pairing code: ' + data.pairingCode;
-        } else {
-          throw new Error(data.error || 'Gagal mendapatkan pairing code');
-        }
-      } catch (error) {
-        statusDiv.textContent = error.message;
-      }
-    };
-
-    async function fetchSessions() {
-      try {
-        const res = await fetch('/whatsapp/sessions');
-        const data = await res.json();
-        sessions = data.sessions || [];
-        renderSessions();
-      } catch (error) {
-        statusDiv.textContent = 'Gagal mengambil daftar session';
-      }
-    }
-
-    async function logoutSession(sessionId) {
-      if (!confirm('Logout session ' + sessionId + '?')) return;
-      
-      try {
-        const res = await fetch('/whatsapp/logout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId })
-        });
-        const data = await res.json();
-        
-        if (data.success) {
-          statusDiv.textContent = 'Berhasil logout.';
-          sessions = sessions.filter(s => s.sessionId !== sessionId);
-          renderSessions();
-        } else {
-          throw new Error(data.error || 'Gagal logout');
-        }
-      } catch (error) {
-        statusDiv.textContent = error.message;
-      }
-    }
-
-    // Polling untuk update status session setiap 5 detik
-    setInterval(fetchSessions, 5000);
-    window.onload = fetchSessions;
-  </script>
+    <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/whatsapp.js"></script>
+    <script src="js/chatwoot.js"></script>
 </body>
 </html>

@@ -24,7 +24,7 @@ export class BaileysConnection extends EventEmitter{
         this.authFolder = path.join(this.sessionFolder, this.sessionId)
         this.usePairingCode = usePairingCode
         this.phoneNumber = phoneNumber
-        this.handler = WhatsAppHandler.getInstance() // Gunakan getInstance() untuk singleton
+        this.handler = WhatsAppHandler.getInstance(sessionId) // Gunakan getInstance() untuk singleton
     }
 
     public async connect(): Promise<void> {
@@ -106,7 +106,7 @@ export class BaileysConnection extends EventEmitter{
                 this.handler.handleMessageUpdate(updates)
             })
             this.sock.ev.on('messages.upsert', async (m) => {
-                this.handler.handleMessageUpsert(m.messages, this.sessionId)
+                this.handler.handleMessageUpsert(m.messages)
             })
             this.sock.ev.on('contacts.upsert', async (contacts) => {
                 this.handler.handleContactUpsert(contacts)
