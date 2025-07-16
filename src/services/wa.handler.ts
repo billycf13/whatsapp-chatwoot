@@ -24,11 +24,7 @@ export class WhatsAppHandler {
         for (const update of updates) {
             const messageId = update.key.id
             const status = update.update?.status
-            
-            console.log('Message Update:', {
-                messageId: messageId,
-                status: update.update,
-            })
+            console.log(update)
             
             if (status && messageId) {
                 await this.updateChatwootMessageStatus(messageId, status)
@@ -43,7 +39,7 @@ export class WhatsAppHandler {
             
             if (!messageInfo) {
                 console.log('Message mapping not found for:', whatsappMessageId)
-                console.log('Available mappings:', Array.from(this.messageMapping.keys()))
+                // Karena tidak ada messages parameter, kita hanya bisa mencatat bahwa mapping tidak ditemukan
                 return
             }
             
@@ -127,8 +123,13 @@ export class WhatsAppHandler {
         if (getInboxIdentifier?.inbox_identifier !== '') {
             const inbox_identifier = getInboxIdentifier?.inbox_identifier!
             for (const message of messages) {
-                if (!message.key.fromMe) {
-                    const phone = message.key.remoteJid?.split('@')[0]!
+                // Skip jika pesan dari grup atau status broadcast
+                if (!message.key.fromMe && 
+                    !message.key.remoteJid?.endsWith('@g.us') && 
+                    !message.key.remoteJid?.includes('status@broadcast')) {
+                    const jid = message.key.remoteJid!
+                    // Format nomor telepon dengan benar
+                    const phone = jid.split('@')[0]
                     
                     // Proses berbagai jenis pesan PERTAMA
                     let messageContent = ''
@@ -237,8 +238,16 @@ export class WhatsAppHandler {
                         const contact_id = contact.payload[0].id
                         
                         // Cari conversation
-                        const getConversation = await chatwootAppApi.getConversationId(contact_id)
-                        conversation_id = getConversation.payload[0].id
+                        let getConversation = await chatwootAppApi.getConversationId(contact_id)
+                        
+                        // Jika conversation belum ada, buat baru
+                        if (!getConversation.payload || getConversation.payload.length === 0) {
+                            // Buat conversation baru
+                            const newConversation = await chatwootClientApi.createConversation(inbox_identifier, contact_id)
+                            conversation_id = newConversation.id
+                        } else {
+                            conversation_id = getConversation.payload[0].id
+                        }
                     }
                     
                     // Kirim pesan ke Chatwoot
@@ -249,6 +258,127 @@ export class WhatsAppHandler {
                         messageContent, 
                         attachments
                     )
+                } else if (message.key.fromMe) {
+                    const msgId = message.key.id
+                    const msgInfo = this.messageMapping.get(msgId!)
+                    if (!msgInfo) {
+                        const phone = message.key.remoteJid?.split('@')[0]
+                        let messageContent = ''
+                        let attachments: any[] = []
+
+                        // Proses berbagai jenis pesan
+                        if (message.message?.conversation) {
+                            messageContent = message.message.conversation
+                        } else if (message.message?.imageMessage) {
+                            messageContent = message.message.imageMessage.caption || ''
+                            try {
+                                const imageBuffer = await downloadMediaMessage(message, 'buffer', {})
+                                attachments.push({
+                                    type: 'image',
+                                    buffer: imageBuffer,
+                                    mimetype: message.message.imageMessage.mimetype,
+                                    filename: `image_${Date.now()}.jpg`
+                                })
+                            } catch (error) {
+                                console.error('Error downloading image:', error)
+                                messageContent = '[Gambar - Gagal diunduh]'
+                            }
+                        } else if (message.message?.documentMessage) {
+                            messageContent = message.message.documentMessage.caption || ''
+                            try {
+                                const docBuffer = await downloadMediaMessage(message, 'buffer', {})
+                                attachments.push({
+                                    type: 'document',
+                                    buffer: docBuffer,
+                                    mimetype: message.message.documentMessage.mimetype,
+                                    filename: message.message.documentMessage.fileName || `document_${Date.now()}`
+                                })
+                            } catch (error) {
+                                console.error('Error downloading document:', error)
+                                messageContent = '[Dokumen - Gagal diunduh]'
+                            }
+                        } else if (message.message?.audioMessage) {
+                            messageContent = ''
+                            try {
+                                const audioBuffer = await downloadMediaMessage(message, 'buffer', {})
+                                attachments.push({
+                                    type: 'audio',
+                                    buffer: audioBuffer,
+                                    mimetype: message.message.audioMessage.mimetype,
+                                    filename: `audio_${Date.now()}.ogg`
+                                })
+                            } catch (error) {
+                                console.error('Error downloading audio:', error)
+                                messageContent = '[Audio - Gagal diunduh]'
+                            }
+                        } else if (message.message?.videoMessage) {
+                            messageContent = message.message.videoMessage.caption || ''
+                            try {
+                                const videoBuffer = await downloadMediaMessage(message, 'buffer', {})
+                                attachments.push({
+                                    type: 'video',
+                                    buffer: videoBuffer,
+                                    mimetype: message.message.videoMessage.mimetype,
+                                    filename: `video_${Date.now()}.mp4`
+                                })
+                            } catch (error) {
+                                console.error('Error downloading video:', error)
+                                messageContent = '[Video - Gagal diunduh]'
+                            }
+                        } else if (message.message?.stickerMessage) {
+                            messageContent = ''
+                            try {
+                                const stickerBuffer = await downloadMediaMessage(message, 'buffer', {})
+                                attachments.push({
+                                    type: 'sticker',
+                                    buffer: stickerBuffer,
+                                    mimetype: 'image/webp',
+                                    filename: `sticker_${Date.now()}.webp`
+                                })
+                            } catch (error) {
+                                console.error('Error downloading sticker:', error)
+                                messageContent = '[Stiker - Gagal diunduh]'
+                            }
+                        } else {
+                            messageContent = '[Pesan tidak didukung]'
+                        }
+
+                        // Cari kontak dan conversation
+                        const getContact = await chatwootAppApi.searchContact(phone!)
+                        if (getContact.payload.length === 0) {
+                            console.log('Contact not found')
+                            return
+                        }
+                        const contact_id = getContact.payload[0].id
+                        const getConversation = await chatwootAppApi.getConversationId(contact_id)
+                        if (!getConversation.payload || getConversation.payload.length === 0) {
+                            console.log('Conversation not found')
+                            return
+                        }
+                        const conversation_id = getConversation.payload[0].id
+
+                        // Kirim pesan ke Chatwoot
+                        let createMessage
+                        if (attachments.length > 0) {
+                            createMessage = await chatwootAppApi.createMessageWithAttachment(
+                                conversation_id,
+                                messageContent,
+                                attachments
+                            )
+                        } else {
+                            createMessage = await chatwootAppApi.createMessage(
+                                conversation_id,
+                                messageContent,
+                                'outgoing'
+                            )
+                        }
+
+                        // Simpan mapping dan set status read
+                        if (createMessage) {
+                            this.storeMessageMapping(msgId!, conversation_id, createMessage.id, phone!)
+                            await this.updateChatwootMessageStatus(msgId!, 4) // Set status read
+                        }
+                    }
                 }
             }
         }

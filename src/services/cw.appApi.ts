@@ -6,11 +6,13 @@ dotenv.config()
 export class ChatwootAppApi {
     private baseUrl : string
     private apiKey : string
+    private syncAgentApi: string
     private accountId: string
 
     constructor () {
         this.baseUrl = process.env.CHATWOOT_BASE_URL!
         this.apiKey = process.env.CHATWOOT_API_KEY!
+        this.syncAgentApi = process.env.CHATWOOT_SYNCAGENT_API_KEY!
         this.accountId = process.env.CHATWOOT_ACCOUNT_ID!
     }
 
@@ -42,7 +44,7 @@ export class ChatwootAppApi {
             {
                 headers: {
                     'Content-Type': 'application/json',
-                    'api_access_token': this.apiKey
+                    'api_access_token': this.syncAgentApi
                 }
             }
         )
@@ -100,19 +102,19 @@ export class ChatwootAppApi {
             const formData = new FormData()
             
             formData.append('content', content)
-            formData.append('message_type', 'incoming')
+            formData.append('message_type', 'outgoing')
             
             for (const attachment of attachments) {
                 formData.append('attachments[]', attachment.buffer, {
                     filename: attachment.filename,
-                    contentType: attachment.mimetype
+                    contentType: attachment.mimetype,
                 })
             }
             
             const response = await axios.post(url, formData, {
                 headers: {
                     ...formData.getHeaders(),
-                    'api_access_token': this.apiKey
+                    'api_access_token': this.syncAgentApi
                 },
                 maxContentLength: Infinity,
                 maxBodyLength: Infinity,

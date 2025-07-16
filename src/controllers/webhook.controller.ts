@@ -117,7 +117,7 @@ export class WebhookController {
         const sessionId = req.params.sessionId
         const event = req.body
         
-        if (event.event === 'message_created' && event.sender.type === 'user' && event.message_type === 'outgoing') {
+        if (event.event === 'message_created' && event.sender.name !== 'syncAgent' && event.message_type === 'outgoing') {
             const contact_id = Number(event.conversation.contact_inbox.contact_id)
             const showContact = await chatwootAppApi.showContact(contact_id)
             const identifier = showContact.payload.identifier
