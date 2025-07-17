@@ -2,6 +2,12 @@ import { WAMessage, WAMessageUpdate, Contact, downloadMediaMessage } from '@whis
 import { ChatwootAppApi } from './cw.appApi'
 import { ChatwootClientApi } from './cw.clientApi'
 import { ChatwootConfig } from '../models/cwConfig.model'
+import { 
+    processWhatsAppMedia, 
+    getWhatsAppMediaInfo, 
+    getWhatsAppMediaCaption,
+    hasWhatsAppMedia 
+} from '../utils'
 
 export class WhatsAppHandler {
     private static instance: WhatsAppHandler
@@ -9,8 +15,10 @@ export class WhatsAppHandler {
     private chatwootClientApi: ChatwootClientApi | null = null
     private sessionId: string
     private configInitialized: boolean = false
-    // Mapping untuk menyimpan relasi messageId WhatsApp dengan Chatwoot
+    private sock: any = null
     private messageMapping = new Map<string, { conversation_id: number, message_id: number, phone: string, lastStatus?: number }>()
+    // Tambahkan properti incomingMessages yang hilang
+    private incomingMessages = new Map<string, { messageId: string, jid: string, conversationId: number }>()
     
     private constructor(sessionId: string) {
         this.sessionId = sessionId
@@ -56,6 +64,10 @@ export class WhatsAppHandler {
         return true
     }
 
+    public setSocket(sock: any) {
+        this.sock = sock
+    }
+
     public async handleMessageUpdate(updates: WAMessageUpdate[]) {
         if (!this.checkConfigInitialized()) return
         
@@ -74,33 +86,30 @@ export class WhatsAppHandler {
         if (!this.checkConfigInitialized()) return
         
         try {
-            // Cari mapping pesan di cache
             const messageInfo = this.messageMapping.get(whatsappMessageId)
             
             if (!messageInfo) {
-                console.log('Message mapping not found for:', whatsappMessageId)
+                // console.log('Message mapping not found for:', whatsappMessageId)
                 return
             }
             
-            // Cek apakah status baru lebih tinggi dari status terakhir
             if (messageInfo.lastStatus && status <= messageInfo.lastStatus) {
-                console.log(`Ignoring status downgrade: ${whatsappMessageId} from ${messageInfo.lastStatus} to ${status}`)
+                // console.log(`Ignoring status downgrade: ${whatsappMessageId} from ${messageInfo.lastStatus} to ${status}`)
                 return
             }
             
-            // Mapping status WhatsApp ke Chatwoot
             let chatwootStatus: string
             switch (status) {
-                case 1: // Pending
+                case 1:
                     chatwootStatus = 'pending'
                     break
-                case 2: // Sent/Delivered
+                case 2:
                     chatwootStatus = 'Sending'
                     break
-                case 3: // Received
+                case 3:
                     chatwootStatus = 'Delivered'
                     break
-                case 4: // Read
+                case 4:
                     chatwootStatus = 'read'
                     break
                 default:
@@ -108,22 +117,20 @@ export class WhatsAppHandler {
                     return
             }
             
-            console.log(`Updating message status in Chatwoot: ${whatsappMessageId} -> ${chatwootStatus} (from status ${messageInfo.lastStatus || 'none'} to ${status})`)
+            // console.log(`Updating message status in Chatwoot: ${whatsappMessageId} -> ${chatwootStatus} (from status ${messageInfo.lastStatus || 'none'} to ${status})`)
             
-            // Update status terakhir di mapping
             messageInfo.lastStatus = status
             this.messageMapping.set(whatsappMessageId, messageInfo)
             
-            // Update status di Chatwoot (jika API tersedia)
             try {
                 await this.chatwootAppApi!.updateMessageStatus(
                     messageInfo.conversation_id,
                     messageInfo.message_id,
                     chatwootStatus
                 )
-                console.log(`Message status updated successfully: ${chatwootStatus}`)
+                // console.log(`Message status updated successfully: ${chatwootStatus}`)
             } catch (apiError) {
-                console.log('Message status update API not available, logging status only:', chatwootStatus)
+                console.error('Message status update API not available, logging status only:', chatwootStatus)
             }
             
         } catch (error) {
@@ -131,24 +138,21 @@ export class WhatsAppHandler {
         }
     }
     
-    // Method untuk menyimpan mapping ketika mengirim pesan dari Chatwoot ke WhatsApp
     public storeMessageMapping(whatsappMessageId: string, conversation_id: number, message_id: number, phone: string) {
         console.log(`Storing message mapping: ${whatsappMessageId} -> conv:${conversation_id}, msg:${message_id}, phone:${phone}`)
         this.messageMapping.set(whatsappMessageId, {
             conversation_id,
             message_id,
             phone,
-            lastStatus: 1 // Set status awal sebagai pending
+            lastStatus: 1
         })
         
-        // Auto cleanup setelah 24 jam
         setTimeout(() => {
             this.messageMapping.delete(whatsappMessageId)
             console.log(`Cleaned up message mapping: ${whatsappMessageId}`)
         }, 24 * 60 * 60 * 1000)
     }
     
-    // Method untuk debugging
     public getMappingCount(): number {
         return this.messageMapping.size
     }
@@ -159,270 +163,272 @@ export class WhatsAppHandler {
 
     public async handleMessageUpsert(messages: WAMessage[]) {
         if (!this.checkConfigInitialized()) return
-        
+        console.log('pesan masuk ', messages)
+        console.log('pesan masuk ', messages[0].message)
         const sessionId = this.sessionId
         const getInboxIdentifier = await ChatwootConfig.findOne({ sessionId })
         if (getInboxIdentifier?.inboxIdentifier !== '') {
             const inbox_identifier = getInboxIdentifier?.inboxIdentifier!
             for (const message of messages) {
-                // Skip jika pesan dari grup atau status broadcast
                 if (!message.key.fromMe && 
                     !message.key.remoteJid?.endsWith('@g.us') && 
                     !message.key.remoteJid?.includes('status@broadcast')) {
-                    const jid = message.key.remoteJid!
-                    // Format nomor telepon dengan benar
-                    const phone = jid.split('@')[0]
                     
-                    // Proses berbagai jenis pesan PERTAMA
-                    let messageContent = ''
-                    let attachments: any[] = []
+                    await this.processIncomingMessage(message, inbox_identifier)
                     
-                    if (message.message?.conversation) {
-                        messageContent = message.message.conversation
-                    } else if (message.message?.imageMessage) {
-                        messageContent = message.message.imageMessage.caption || ''
-                        try {
-                            const imageBuffer = await downloadMediaMessage(message, 'buffer', {})
-                            attachments.push({
-                                type: 'image',
-                                buffer: imageBuffer,
-                                mimetype: message.message.imageMessage.mimetype,
-                                filename: `image_${Date.now()}.jpg`
-                            })
-                        } catch (error) {
-                            console.error('Error downloading image:', error)
-                            messageContent = '[Gambar - Gagal diunduh]'
-                        }
-                    } else if (message.message?.documentMessage) {
-                        messageContent = message.message.documentMessage.caption || ''
-                        try {
-                            const docBuffer = await downloadMediaMessage(message, 'buffer', {})
-                            attachments.push({
-                                type: 'document',
-                                buffer: docBuffer,
-                                mimetype: message.message.documentMessage.mimetype,
-                                filename: message.message.documentMessage.fileName || `document_${Date.now()}`
-                            })
-                        } catch (error) {
-                            console.error('Error downloading document:', error)
-                            messageContent = '[Dokumen - Gagal diunduh]'
-                        }
-                    } else if (message.message?.audioMessage) {
-                        messageContent = ''
-                        try {
-                            const audioBuffer = await downloadMediaMessage(message, 'buffer', {})
-                            attachments.push({
-                                type: 'audio',
-                                buffer: audioBuffer,
-                                mimetype: message.message.audioMessage.mimetype,
-                                filename: `audio_${Date.now()}.ogg`
-                            })
-                        } catch (error) {
-                            console.error('Error downloading audio:', error)
-                            messageContent = '[Audio - Gagal diunduh]'
-                        }
-                    } else if (message.message?.videoMessage) {
-                        messageContent = message.message.videoMessage.caption || ''
-                        try {
-                            const videoBuffer = await downloadMediaMessage(message, 'buffer', {})
-                            attachments.push({
-                                type: 'video',
-                                buffer: videoBuffer,
-                                mimetype: message.message.videoMessage.mimetype,
-                                filename: `video_${Date.now()}.mp4`
-                            })
-                        } catch (error) {
-                            console.error('Error downloading video:', error)
-                            messageContent = '[Video - Gagal diunduh]'
-                        }
-                    } else if (message.message?.stickerMessage) {
-                        messageContent = ''
-                        try {
-                            const stickerBuffer = await downloadMediaMessage(message, 'buffer', {})
-                            attachments.push({
-                                type: 'sticker',
-                                buffer: stickerBuffer,
-                                mimetype: 'image/webp',
-                                filename: `sticker_${Date.now()}.webp`
-                            })
-                        } catch (error) {
-                            console.error('Error downloading sticker:', error)
-                            messageContent = '[Stiker - Gagal diunduh]'
-                        }
-                    } else {
-                        messageContent = '[Pesan tidak didukung]'
-                    }
-
-                    // Cari kontak SETELAH memproses pesan
-                    const contact = await this.chatwootAppApi!.searchContact(phone)
-                    
-                    let contact_identifier: string
-                    let conversation_id: number
-                    
-                    if (contact.payload.length === 0) {
-                        // Buat kontak baru
-                        const identifier = message.key.remoteJid 
-                        const phone_number = '+' + message.key.remoteJid?.split('@')[0]!
-                        const name = message.pushName || phone_number
-                        const createContact = await this.chatwootClientApi!.createContact(inbox_identifier, {
-                            identifier: identifier || '',
-                            name: name,
-                            phone_number: phone_number
-                        })
-                        contact_identifier = createContact.source_id
-                        
-                        // Buat percakapan
-                        const createConversation = await this.chatwootClientApi!.createConversation(inbox_identifier, contact_identifier)
-                        conversation_id = createConversation.id
-                    } else {
-                        // Gunakan kontak yang ada
-                        contact_identifier = contact.payload[0].contact_inboxes[0].source_id
-                        const contact_id = contact.payload[0].id
-                        
-                        // Cari conversation
-                        let getConversation = await this.chatwootAppApi!.getConversationId(contact_id)
-                        
-                        // Jika conversation belum ada, buat baru
-                        if (!getConversation.payload || getConversation.payload.length === 0) {
-                            // Buat conversation baru
-                            const newConversation = await this.chatwootClientApi!.createConversation(inbox_identifier, contact_id)
-                            conversation_id = newConversation.id
-                        } else {
-                            conversation_id = getConversation.payload[0].id
-                        }
-                    }
-                    
-                    // Kirim pesan ke Chatwoot
-                    await this.sendMessageToChatwoot(
-                        inbox_identifier, 
-                        contact_identifier, 
-                        conversation_id, 
-                        messageContent, 
-                        attachments
-                    )
                 } else if (message.key.fromMe) {
-                    const msgId = message.key.id
-                    const msgInfo = this.messageMapping.get(msgId!)
-                    if (!msgInfo) {
-                        const phone = message.key.remoteJid?.split('@')[0]
-                        let messageContent = ''
-                        let attachments: any[] = []
-
-                        // Proses berbagai jenis pesan
-                        if (message.message?.conversation) {
-                            messageContent = message.message.conversation
-                        } else if (message.message?.imageMessage) {
-                            messageContent = message.message.imageMessage.caption || ''
-                            try {
-                                const imageBuffer = await downloadMediaMessage(message, 'buffer', {})
-                                attachments.push({
-                                    type: 'image',
-                                    buffer: imageBuffer,
-                                    mimetype: message.message.imageMessage.mimetype,
-                                    filename: `image_${Date.now()}.jpg`
-                                })
-                            } catch (error) {
-                                console.error('Error downloading image:', error)
-                                messageContent = '[Gambar - Gagal diunduh]'
-                            }
-                        } else if (message.message?.documentMessage) {
-                            messageContent = message.message.documentMessage.caption || ''
-                            try {
-                                const docBuffer = await downloadMediaMessage(message, 'buffer', {})
-                                attachments.push({
-                                    type: 'document',
-                                    buffer: docBuffer,
-                                    mimetype: message.message.documentMessage.mimetype,
-                                    filename: message.message.documentMessage.fileName || `document_${Date.now()}`
-                                })
-                            } catch (error) {
-                                console.error('Error downloading document:', error)
-                                messageContent = '[Dokumen - Gagal diunduh]'
-                            }
-                        } else if (message.message?.audioMessage) {
-                            messageContent = ''
-                            try {
-                                const audioBuffer = await downloadMediaMessage(message, 'buffer', {})
-                                attachments.push({
-                                    type: 'audio',
-                                    buffer: audioBuffer,
-                                    mimetype: message.message.audioMessage.mimetype,
-                                    filename: `audio_${Date.now()}.ogg`
-                                })
-                            } catch (error) {
-                                console.error('Error downloading audio:', error)
-                                messageContent = '[Audio - Gagal diunduh]'
-                            }
-                        } else if (message.message?.videoMessage) {
-                            messageContent = message.message.videoMessage.caption || ''
-                            try {
-                                const videoBuffer = await downloadMediaMessage(message, 'buffer', {})
-                                attachments.push({
-                                    type: 'video',
-                                    buffer: videoBuffer,
-                                    mimetype: message.message.videoMessage.mimetype,
-                                    filename: `video_${Date.now()}.mp4`
-                                })
-                            } catch (error) {
-                                console.error('Error downloading video:', error)
-                                messageContent = '[Video - Gagal diunduh]'
-                            }
-                        } else if (message.message?.stickerMessage) {
-                            messageContent = ''
-                            try {
-                                const stickerBuffer = await downloadMediaMessage(message, 'buffer', {})
-                                attachments.push({
-                                    type: 'sticker',
-                                    buffer: stickerBuffer,
-                                    mimetype: 'image/webp',
-                                    filename: `sticker_${Date.now()}.webp`
-                                })
-                            } catch (error) {
-                                console.error('Error downloading sticker:', error)
-                                messageContent = '[Stiker - Gagal diunduh]'
-                            }
-                        } else {
-                            messageContent = '[Pesan tidak didukung]'
-                        }
-
-                        // Cari kontak dan conversation
-                        const getContact = await this.chatwootAppApi!.searchContact(phone!)
-                        if (getContact.payload.length === 0) {
-                            console.log('Contact not found')
-                            return
-                        }
-                        const contact_id = getContact.payload[0].id
-                        const getConversation = await this.chatwootAppApi!.getConversationId(contact_id)
-                        if (!getConversation.payload || getConversation.payload.length === 0) {
-                            console.log('Conversation not found')
-                            return
-                        }
-                        const conversation_id = getConversation.payload[0].id
-
-                        // Kirim pesan ke Chatwoot
-                        let createMessage
-                        if (attachments.length > 0) {
-                            createMessage = await this.chatwootAppApi!.createMessageWithAttachment(
-                                conversation_id,
-                                messageContent,
-                                attachments
-                            )
-                        } else {
-                            createMessage = await this.chatwootAppApi!.createMessage(
-                                conversation_id,
-                                messageContent,
-                                'outgoing'
-                            )
-                        }
-
-                        // Simpan mapping dan set status read
-                        if (createMessage) {
-                            this.storeMessageMapping(msgId!, conversation_id, createMessage.id, phone!)
-                            await this.updateChatwootMessageStatus(msgId!, 4) // Set status read
-                        }
-                    }
+                    await this.processOutgoingMessage(message)
                 }
             }
+        }
+    }
+
+    private async processIncomingMessage(message: WAMessage, inbox_identifier: string) {
+        const jid = message.key.remoteJid!
+        const phone = jid.split('@')[0]
+        const messageId = message.key.id!
+        
+        const { messageContent, attachments } = await this.processMessageContent(message)
+        
+        // Skip jika tidak ada konten (seperti protocol messages)
+        if (!messageContent && attachments.length === 0) {
+            console.log('Skipping message with no content (likely system message)')
+            return
+        }
+        
+        const { contact_identifier, conversation_id } = await this.handleContactAndConversation(
+            message, phone, inbox_identifier
+        )
+        
+        // Simpan pesan masuk untuk tracking read status
+        this.incomingMessages.set(messageId, {
+            messageId,
+            jid,
+            conversationId: conversation_id
+        })
+        
+        // Auto-cleanup setelah 24 jam
+        setTimeout(() => {
+            this.incomingMessages.delete(messageId)
+        }, 24 * 60 * 60 * 1000)
+        
+        await this.sendMessageToChatwoot(
+            inbox_identifier, 
+            contact_identifier, 
+            conversation_id, 
+            messageContent, 
+            attachments
+        )
+    }
+    
+    // Method untuk menandai conversation sebagai dibaca di WhatsApp
+    public async markConversationAsRead(conversationId: number) {
+        if (!this.sock) {
+            console.log('WhatsApp socket not available')
+            return
+        }
+        
+        try {
+            const messagesToRead: { remoteJid: string, id: string }[] = []
+            
+            // Cari semua pesan masuk untuk conversation ini
+            for (const [messageId, messageInfo] of this.incomingMessages.entries()) {
+                if (messageInfo.conversationId === conversationId) {
+                    messagesToRead.push({
+                        remoteJid: messageInfo.jid,
+                        id: messageInfo.messageId
+                    })
+                }
+            }
+            
+            if (messagesToRead.length > 0) {
+                // Gunakan Baileys readMessages untuk menandai sebagai dibaca
+                await this.sock.readMessages(messagesToRead)
+                console.log(`✅ Marked ${messagesToRead.length} WhatsApp messages as read for conversation ${conversationId}`)
+                
+                // Hapus dari tracking setelah dibaca
+                messagesToRead.forEach(msg => {
+                    this.incomingMessages.delete(msg.id)
+                })
+            } else {
+                console.log(`No unread messages found for conversation ${conversationId}`)
+            }
+        } catch (error) {
+            console.error('❌ Error marking conversation as read:', error)
+        }
+    }
+
+    private async processOutgoingMessage(message: WAMessage) {
+        const msgId = message.key.id
+        const msgInfo = this.messageMapping.get(msgId!)
+        
+        if (!msgInfo) {
+            const phone = message.key.remoteJid?.split('@')[0]
+            
+            const { messageContent, attachments } = await this.processMessageContent(message)
+            
+            const getContact = await this.chatwootAppApi!.searchContact(phone!)
+            if (getContact.payload.length === 0) {
+                console.log('Contact not found')
+                return
+            }
+            
+            const contact_id = getContact.payload[0].id
+            const getConversation = await this.chatwootAppApi!.getConversationId(contact_id)
+            if (!getConversation.payload || getConversation.payload.length === 0) {
+                console.log('Conversation not found')
+                return
+            }
+            
+            const conversation_id = getConversation.payload[0].id
+    
+            let createMessage
+            if (attachments.length > 0) {
+                createMessage = await this.chatwootAppApi!.createMessageWithAttachment(
+                    conversation_id,
+                    messageContent,
+                    attachments
+                )
+            } else {
+                createMessage = await this.chatwootAppApi!.createMessage(
+                    conversation_id,
+                    messageContent,
+                    'outgoing'
+                )
+            }
+    
+            if (createMessage) {
+                this.storeMessageMapping(msgId!, conversation_id, createMessage.id, phone!)
+                await this.updateChatwootMessageStatus(msgId!, 4)
+            }
+        }
+    }
+    
+    private async processMessageContent(message: WAMessage): Promise<{ messageContent: string, attachments: any[] }> {
+        let messageContent = ''
+        let attachments: any[] = []
+        
+        // Tangani pesan teks biasa
+        if (message.message?.conversation) {
+            messageContent = message.message.conversation
+            return { messageContent, attachments }
+        }
+        
+        // Tangani extended text message (pesan teks dengan format atau context)
+        if (message.message?.extendedTextMessage?.text) {
+            messageContent = message.message.extendedTextMessage.text
+            return { messageContent, attachments }
+        }
+        
+        // Skip protocol messages (sistem messages seperti ephemeral settings)
+        if (message.message?.protocolMessage) {
+            console.log('Skipping protocol message (system message)')
+            return { messageContent: '', attachments: [] }
+        }
+        
+        // Tangani media messages
+        if (hasWhatsAppMedia(message.message)) {
+            try {
+                console.log('Processing WhatsApp media...', {
+                    messageType: Object.keys(message.message || {}),
+                    hasMedia: hasWhatsAppMedia(message.message),
+                    hasSocket: !!this.sock
+                })
+                
+                const processedAttachment = await processWhatsAppMedia(message, this.sock)
+                
+                if (processedAttachment) {
+                    console.log('Media processed successfully:', {
+                        filename: processedAttachment.filename,
+                        mimetype: processedAttachment.mimetype,
+                        bufferSize: processedAttachment.buffer?.length,
+                        category: processedAttachment.category
+                    })
+                    
+                    attachments.push({
+                        buffer: processedAttachment.buffer,
+                        mimetype: processedAttachment.mimetype,
+                        filename: processedAttachment.filename
+                    })
+                } else {
+                    console.log('No processed attachment returned')
+                }
+                
+                messageContent = getWhatsAppMediaCaption(message.message) || ''
+                
+            } catch (error) {
+                console.error('Error processing media:', error)
+                const mediaInfo = getWhatsAppMediaInfo(message.message)
+                messageContent = `[${this.getMediaErrorMessage(mediaInfo.mediaType)} - Gagal diunduh]`
+            }
+        } else {
+            messageContent = '[Pesan tidak didukung]'
+        }
+        
+        console.log('Final message content:', {
+            messageContent,
+            attachmentCount: attachments.length
+        })
+        
+        return { messageContent, attachments }
+    }
+
+    private async handleContactAndConversation(
+        message: WAMessage, 
+        phone: string, 
+        inbox_identifier: string
+    ): Promise<{ contact_identifier: string, conversation_id: number }> {
+        const contact = await this.chatwootAppApi!.searchContact(phone)
+        
+        let contact_identifier: string
+        let conversation_id: number
+        
+        if (contact.payload.length === 0) {
+            const identifier = message.key.remoteJid 
+            const phone_number = '+' + message.key.remoteJid?.split('@')[0]!
+            const name = message.pushName || phone_number
+            const createContact = await this.chatwootClientApi!.createContact(inbox_identifier, {
+                identifier: identifier || '',
+                name: name,
+                phone_number: phone_number
+            })
+            // contact_identifier = createContact.source_id
+            if (createContact) {
+                console.log('contact created successfully')
+            }
+            const searchContact = await this.chatwootAppApi!.searchContact(phone)
+            console.log('search contact',searchContact.payload)
+            contact_identifier =searchContact.payload[0].contact_inboxes[0].source_id
+            console.log('contact identifier: ', contact_identifier)
+            console.log('innbox identifier: ', inbox_identifier)
+            const createConversation = await this.chatwootClientApi!.createConversation(inbox_identifier, contact_identifier)
+            conversation_id = createConversation.id
+            console.log('create conversation: ',createConversation)
+        } else {
+            contact_identifier = contact.payload[0].contact_inboxes[0].source_id
+            const contact_id = contact.payload[0].id
+            
+            let getConversation = await this.chatwootAppApi!.getConversationId(contact_id)
+            
+            if (!getConversation.payload || getConversation.payload.length === 0) {
+                const newConversation = await this.chatwootClientApi!.createConversation(inbox_identifier, contact_id)
+                conversation_id = newConversation.id
+            } else {
+                conversation_id = getConversation.payload[0].id
+            }
+        }
+        
+        return { contact_identifier, conversation_id }
+    }
+
+    private getMediaErrorMessage(mediaType?: string): string {
+        switch (mediaType) {
+            case 'image': return 'Gambar'
+            case 'video': return 'Video'
+            case 'audio': return 'Audio'
+            case 'document': return 'Dokumen'
+            case 'sticker': return 'Stiker'
+            default: return 'Media'
         }
     }
 
@@ -447,6 +453,15 @@ export class WhatsAppHandler {
         
         try {
             if (attachments.length > 0) {
+                console.log('Sending message with attachments:', {
+                    attachmentCount: attachments.length,
+                    attachmentInfo: attachments.map(att => ({
+                        filename: att.filename,
+                        mimetype: att.mimetype,
+                        bufferSize: att.buffer?.length
+                    }))
+                })
+                
                 await this.chatwootClientApi!.createMessageWithAttachment(
                     inbox_identifier,
                     contact_identifier,
@@ -462,12 +477,13 @@ export class WhatsAppHandler {
                     content
                 )
             }
+            
+            console.log('Message sent successfully to Chatwoot')
         } catch (error) {
             console.error('Error sending message to Chatwoot:', error)
         }
     }
     
-    // Method untuk re-initialize APIs jika konfigurasi berubah
     public async reinitializeApis() {
         this.configInitialized = false
         this.chatwootAppApi = null

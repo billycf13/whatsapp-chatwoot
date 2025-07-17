@@ -5,8 +5,7 @@ export class CwConfigController {
     // Create new chatwoot config
     static async createConfig(req: Request, res: Response) {
         try {
-            const { sessionId, baseUrl, agentApiToken, botApiToken, inboxIdentifier, accountId } = req.body
-            
+            const { sessionId, baseUrl, agentApiToken, botApiToken, accountId, inboxIdentifier } = req.body
             const config = new ChatwootConfig({
                 sessionId,
                 baseUrl,
@@ -27,10 +26,27 @@ export class CwConfigController {
     // Get all configs
     static async getAllConfigs(req: Request, res: Response) {
         try {
-            const configs = await ChatwootConfig.find().populate('sessionId')
+            const configs = await ChatwootConfig.find() // Hapus .populate('sessionId')
             res.json(configs)
         } catch (error: any) {
             console.error('Error getting configs:', error)
+            res.status(500).json({ error: error.message })
+        }
+    }
+
+    // Get config by sessionId
+    static async getConfigBySessionId(req: Request, res: Response) {
+        try {
+            const { sessionId } = req.params
+            const config = await ChatwootConfig.findOne({ sessionId }) // Hapus .populate('sessionId')
+            
+            if (!config) {
+                return res.status(404).json({ error: 'Config not found for this session' })
+            }
+            
+            res.json(config)
+        } catch (error: any) {
+            console.error('Error getting config by session:', error)
             res.status(500).json({ error: error.message })
         }
     }
@@ -48,23 +64,6 @@ export class CwConfigController {
             res.json(config)
         } catch (error: any) {
             console.error('Error getting config:', error)
-            res.status(500).json({ error: error.message })
-        }
-    }
-
-    // Get config by sessionId
-    static async getConfigBySessionId(req: Request, res: Response) {
-        try {
-            const { sessionId } = req.params
-            const config = await ChatwootConfig.findOne({ sessionId }).populate('sessionId')
-            
-            if (!config) {
-                return res.status(404).json({ error: 'Config not found for this session' })
-            }
-            
-            res.json(config)
-        } catch (error: any) {
-            console.error('Error getting config by session:', error)
             res.status(500).json({ error: error.message })
         }
     }

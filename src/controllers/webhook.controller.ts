@@ -7,12 +7,22 @@ import { WhatsappController } from '../controllers/whatsapp.controller'
 import { WhatsAppHandler } from '../services/wa.handler'
 import axios from 'axios'
 import * as path from 'path'
+// Import utility functions
+import { 
+    processAttachmentForWhatsApp, 
+    downloadAttachmentFromUrl,
+    AttachmentProcessingOptions 
+} from '../utils'
 
 // Hapus instansiasi global
 // const chatwootAppApi = new ChatwootAppApi()
-const whatsappController = new WhatsappController()
+// const whatsappController = new WhatsappController()
 
 export class WebhookController {
+    // Tambahkan cache untuk mencegah duplikasi
+    private static processedMessages = new Map<string, number>()
+    private static readonly CACHE_DURATION = 5 * 60 * 1000 // 5 menit
+    
     // Fungsi untuk mendeteksi MIME type dari buffer file
     private static detectMimeTypeFromBuffer(buffer: Buffer): string {
         // Deteksi berdasarkan magic bytes/file signature
@@ -118,7 +128,31 @@ export class WebhookController {
         const sessionId = req.params.sessionId
         const event = req.body
         
-        if (event.event === 'message_created' && event.sender.name !== 'syncAgent' && event.message_type === 'outgoing') {
+        // Buat unique key untuk message
+        const messageKey = `${event.id}_${event.conversation?.id}_${sessionId}`
+        const currentTime = Date.now()
+        
+        // Cek apakah message sudah diproses dalam 5 menit terakhir
+        if (WebhookController.processedMessages.has(messageKey)) {
+            const processedTime = WebhookController.processedMessages.get(messageKey)!
+            if (currentTime - processedTime < WebhookController.CACHE_DURATION) {
+                // console.log('Duplicate message detected, skipping:', messageKey)
+                res.send('Duplicate webhook ignored!')
+                return
+            }
+        }
+        
+        // Bersihkan cache yang sudah expired
+        WebhookController.cleanExpiredCache(currentTime)
+        
+        // Proses message_created DAN message_updated untuk outgoing messages
+        if ((event.event === 'message_created' || event.event === 'message_updated') && 
+            event.sender.name !== 'syncAgent' && 
+            event.message_type === 'outgoing') {
+            
+            // Tandai message sebagai sudah diproses
+            WebhookController.processedMessages.set(messageKey, currentTime)
+            
             // Inisialisasi ChatwootAppApi dengan sessionId
             const chatwootAppApiResult = await ChatwootAppApi.fromSessionId(sessionId)
             
@@ -158,91 +192,91 @@ export class WebhookController {
                     
                     // Periksa attachment terlebih dahulu
                     if (event.attachments && event.attachments.length > 0) {
-                        // Tangani pesan dengan attachment
-                        console.log('Processing attachments:', event.attachments.length)
+                        // Tangani pesan dengan attachment menggunakan utility
+                        // console.log('Processing attachments:', event.attachments.length)
                         
                         for (const attachment of event.attachments) {
                             try {
-                                // Download file dari Chatwoot
-                                console.log('Downloading file from:', attachment.data_url)
-                                const fileResponse = await axios.get(attachment.data_url, {
-                                    responseType: 'arraybuffer',
-                                    timeout: 30000
-                                })
+                                // Gunakan utility function untuk process attachment
+                                // Ganti baris 198-201:
+                                const processedAttachment = await processAttachmentForWhatsApp(
+                                    attachment.data_url,
+                                    {
+                                        originalName: attachment.file_name,
+                                        originalMimeType: attachment.file_type,
+                                        maxSize: 50 * 1024 * 1024, // 50MB
+                                        // HAPUS allowedTypes atau gunakan MIME types spesifik
+                                        // allowedTypes: ['image', 'video', 'audio', 'document'], // ❌ SALAH
+                                        allowedTypes: [
+                                            // Images
+                                            'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+                                            // Videos  
+                                            'video/mp4', 'video/mpeg', 'video/quicktime', 'video/webm', 'video/3gpp',
+                                            // Audio
+                                            'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/aac', 'audio/amr',
+                                            // Documents
+                                            'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                            'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                            'text/plain', 'text/csv'
+                                        ], // ✅ BENAR
+                                        generateTimestamp: true
+                                    } as AttachmentProcessingOptions
+                                )
                                 
-                                const fileBuffer = Buffer.from(fileResponse.data)
+                                // console.log('Processed attachment:', {
+                                //     originalName: attachment.file_name,
+                                //     processedName: processedAttachment.filename,
+                                //     mimeType: processedAttachment.mimetype,
+                                //     category: processedAttachment.category,
+                                //     size: processedAttachment.size
+                                // })
                                 
-                                // Deteksi MIME type yang sebenarnya dari file buffer
-                                let detectedMimeType = WebhookController.detectMimeTypeFromBuffer(fileBuffer)
-                                let originalMimeType = attachment.file_type
-                                
-                                // Gunakan detected MIME type jika original adalah generik atau tidak valid
-                                let finalMimeType = originalMimeType
-                                if (originalMimeType === 'file' || 
-                                    originalMimeType === 'image' || 
-                                    originalMimeType === 'video' || 
-                                    originalMimeType === 'audio' || 
-                                    originalMimeType === 'document' || 
-                                    !originalMimeType || 
-                                    originalMimeType === 'application/octet-stream') {
-                                    finalMimeType = detectedMimeType
-                                    console.log(`MIME type detected: ${originalMimeType} -> ${detectedMimeType}`)
-                                }
-                                
-                                // Generate filename dengan ekstensi yang tepat
-                                const fileName = WebhookController.getFileExtension(finalMimeType, attachment.file_name)
-                                
-                                console.log('File info:', {
-                                    originalName: attachment.file_name,
-                                    finalName: fileName,
-                                    originalMime: originalMimeType,
-                                    detectedMime: detectedMimeType,
-                                    finalMime: finalMimeType,
-                                    size: fileBuffer.length
-                                })
-                                
-                                // Tentukan jenis file dan kirim sesuai tipe
-                                if (finalMimeType.startsWith('image/')) {
-                                    if (message && message.trim()) {
-                                        console.log('Sending image with caption:', fileName, 'to', jid, 'caption:', message)
-                                        sendResult = await msgService.sendImage(jid, fileBuffer, message)
-                                        console.log('Image with caption sent:', sendResult)
-                                    } else {
-                                        console.log('Sending image without caption:', fileName, 'to', jid)
-                                        sendResult = await msgService.sendImage(jid, fileBuffer)
-                                        console.log('Image without caption sent:', sendResult)
-                                    }
-                                    
-                                } else if (finalMimeType.startsWith('video/')) {
-                                    if (message && message.trim()) {
-                                        console.log('Sending video with caption:', fileName, 'to', jid, 'caption:', message)
-                                        sendResult = await msgService.sendVideo(jid, fileBuffer, message)
-                                        console.log('Video with caption sent:', sendResult)
-                                    } else {
-                                        console.log('Sending video without caption:', fileName, 'to', jid)
-                                        sendResult = await msgService.sendVideo(jid, fileBuffer)
-                                        console.log('Video without caption sent:', sendResult)
-                                    }
-                                    
-                                } else if (finalMimeType.startsWith('audio/')) {
-                                    console.log('Sending audio:', fileName, 'to', jid)
-                                    sendResult = await msgService.sendAudio(jid, fileBuffer)
-                                    console.log('Audio sent:', sendResult)
-                                    
-                                    if (message && message.trim()) {
-                                        console.log('Sending text message after audio:', message)
-                                        await msgService.sendText(jid, message)
-                                    }
-                                    
-                                } else {
-                                    console.log('Sending document:', fileName, 'to', jid)
-                                    sendResult = await msgService.sendDocument(jid, fileBuffer, fileName, finalMimeType)
-                                    console.log('Document sent:', sendResult)
-                                    
-                                    if (message && message.trim()) {
-                                        console.log('Sending text message after document:', message)
-                                        await msgService.sendText(jid, message)
-                                    }
+                                // Kirim berdasarkan kategori file
+                                switch (processedAttachment.category) {
+                                    case 'image':
+                                        if (message && message.trim()) {
+                                            // console.log('Sending image with caption:', processedAttachment.filename, 'to', jid)
+                                            sendResult = await msgService.sendImage(jid, processedAttachment.buffer, message)
+                                        } else {
+                                            // console.log('Sending image without caption:', processedAttachment.filename, 'to', jid)
+                                            sendResult = await msgService.sendImage(jid, processedAttachment.buffer)
+                                        }
+                                        break
+                                        
+                                    case 'video':
+                                        if (message && message.trim()) {
+                                            // console.log('Sending video with caption:', processedAttachment.filename, 'to', jid)
+                                            sendResult = await msgService.sendVideo(jid, processedAttachment.buffer, message)
+                                        } else {
+                                            // console.log('Sending video without caption:', processedAttachment.filename, 'to', jid)
+                                            sendResult = await msgService.sendVideo(jid, processedAttachment.buffer)
+                                        }
+                                        break
+                                        
+                                    case 'audio':
+                                        // console.log('Sending audio:', processedAttachment.filename, 'to', jid)
+                                        sendResult = await msgService.sendAudio(jid, processedAttachment.buffer)
+                                        
+                                        if (message && message.trim()) {
+                                            // console.log('Sending text message after audio:', message)
+                                            await msgService.sendText(jid, message)
+                                        }
+                                        break
+                                        
+                                    default: // document
+                                        // console.log('Sending document:', processedAttachment.filename, 'to', jid)
+                                        sendResult = await msgService.sendDocument(
+                                            jid, 
+                                            processedAttachment.buffer, 
+                                            processedAttachment.filename, 
+                                            processedAttachment.mimetype
+                                        )
+                                        
+                                        if (message && message.trim()) {
+                                            // console.log('Sending text message after document:', message)
+                                            await msgService.sendText(jid, message)
+                                        }
+                                        break
                                 }
                                 
                                 // Simpan mapping setelah berhasil mengirim
@@ -254,7 +288,7 @@ export class WebhookController {
                                         message_id,
                                         phone
                                     )
-                                    console.log('Message mapping stored for attachment:', sendResult.key.id)
+                                    // console.log('Message mapping stored for attachment:', sendResult.key.id)
                                 }
                                 
                             } catch (attachmentError) {
@@ -265,9 +299,9 @@ export class WebhookController {
                         
                     } else if (contentType === 'text' && message && message.trim()) {
                         // Kirim pesan text saja
-                        console.log('Sending text only:', sessionId, jid, message)
+                        // console.log('Sending text only:', sessionId, jid, message)
                         sendResult = await msgService.sendText(jid, message)
-                        console.log('Text sent:', sendResult)
+                        // console.log('Text sent:', sendResult)
                         
                         // Simpan mapping setelah berhasil mengirim text
                         if (sendResult && sendResult.key && sendResult.key.id) {
@@ -278,18 +312,28 @@ export class WebhookController {
                                 message_id,
                                 phone
                             )
-                            console.log('Message mapping stored for text:', sendResult.key.id)
+                            // console.log('Message mapping stored for text:', sendResult.key.id)
                         }
                         
                     } else {
-                        console.log('Unsupported content type or empty message:', contentType, message)
+                        // console.log('Unsupported content type or empty message:', contentType, message)
                         if (!event.attachments || event.attachments.length === 0) {
-                            await msgService.sendText(jid, '❌ Jenis pesan tidak didukung')
+                            // Kirim pesan error kembali ke Chatwoot alih-alih ke WhatsApp
+                            try {
+                                await chatwootAppApi.createMessage(
+                                    conversation_id,
+                                    '❌ Jenis pesan tidak didukung atau pesan kosong',
+                                    'outgoing',
+                                )
+                                // console.log('Error message sent back to Chatwoot for unsupported content')
+                            } catch (chatwootError) {
+                                console.error('Failed to send error message to Chatwoot:', chatwootError)
+                            }
                         }
                     }
                     
                     // Debug: tampilkan jumlah mapping yang tersimpan
-                    console.log(`Total message mappings stored: ${waHandler.getMappingCount()}`)
+                    // console.log(`Total message mappings stored: ${waHandler.getMappingCount()}`)
                     
                 } catch (error) {
                     console.error('Error in webhook handler:', error)
@@ -304,10 +348,52 @@ export class WebhookController {
                 return
             }
             
+        } else if (event.event === 'conversation_typing_on') {
+            // console.log('Agent started typing - marking messages as read:', {
+            //     conversation_id: event.conversation.id,
+            //     unread_count: event.conversation.unread_count,
+            //     agent_last_seen_at: event.conversation.agent_last_seen_at
+            // })
+            
+            // Deteksi jika agent membaca conversation (agent_last_seen_at berubah)
+            if (event.conversation.unread_count === 0) {
+                const waHandler = WhatsAppHandler.getInstance(sessionId)
+                await waHandler.markConversationAsRead(event.conversation.id)
+                // console.log('Marked WhatsApp messages as read for conversation:', event.conversation.id)
+            }
+            
+        } else if (event.event === 'conversation_updated') {
+            // console.log('Conversation updated event:', {
+            //     id: event.id,
+            //     status: event.status,
+            //     agent_last_seen_at: event.agent_last_seen_at,
+            //     unread_count: event.unread_count
+            // })
+            
+            // Backup trigger jika conversation_typing_on tidak cukup
+            if (event.unread_count === 0 && event.agent_last_seen_at) {
+                const waHandler = WhatsAppHandler.getInstance(sessionId)
+                await waHandler.markConversationAsRead(event.id)
+                // console.log('Marked WhatsApp messages as read for conversation:', event.id)
+            }
         } else if (event.event === 'message_updated') {
-            console.log('Message updated event:', event)
+            // console.log('Message updated event (non-outgoing):', {
+            //     id: event.id,
+            //     event: event.event,
+            //     message_type: event.message_type,
+            //     sender_type: event.sender?.type
+            // })
         }
-        
+        // console.log(event)
         res.send('Webhook received!')
+    }
+    
+    // Fungsi untuk membersihkan cache yang expired
+    private static cleanExpiredCache(currentTime: number): void {
+        for (const [key, timestamp] of WebhookController.processedMessages.entries()) {
+            if (currentTime - timestamp > WebhookController.CACHE_DURATION) {
+                WebhookController.processedMessages.delete(key)
+            }
+        }
     }
 }

@@ -180,6 +180,7 @@ const App = {
                 },
                 ...options
             });
+            console.log(url, options)
             
             const data = await response.json();
             

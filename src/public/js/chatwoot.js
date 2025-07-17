@@ -76,8 +76,8 @@ const Chatwoot = {
             // Populate form
             document.getElementById('session-select').value = config.sessionId;
             document.getElementById('base-url').value = config.baseUrl;
-            document.getElementById('agent-api-token').value = config.agentApiToken;
-            document.getElementById('bot-api-token').value = config.botApiToken;
+            document.getElementById('agent-api-key').value = config.agentApiToken;  // Ubah dari 'agent-api-token' ke 'agent-api-key'
+            document.getElementById('bot-api-key').value = config.botApiToken;      // Ubah dari 'bot-api-token' ke 'bot-api-key'
             document.getElementById('account-id').value = config.accountId;
             document.getElementById('inbox-identifier').value = config.inboxIdentifier;
             
@@ -92,6 +92,7 @@ const Chatwoot = {
     async saveConfig() {
         try {
             const formData = this.getFormData();
+            console.log(formData)
             
             if (!this.validateForm(formData)) {
                 return;
@@ -133,8 +134,8 @@ const Chatwoot = {
         return {
             sessionId: document.getElementById('session-select').value,
             baseUrl: document.getElementById('base-url').value.trim(),
-            agentApiToken: document.getElementById('agent-api-token').value.trim(),
-            botApiToken: document.getElementById('bot-api-token').value.trim(),
+            agentApiToken: document.getElementById('agent-api-key').value.trim(),
+            botApiToken: document.getElementById('bot-api-key').value.trim(),
             accountId: document.getElementById('account-id').value.trim(),
             inboxIdentifier: document.getElementById('inbox-identifier').value.trim()
         };

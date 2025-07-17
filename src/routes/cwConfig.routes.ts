@@ -9,7 +9,7 @@ router.get('/', CwConfigController.getAllConfigs)
 router.get('/:id', CwConfigController.getConfigById)
 router.put('/:id', CwConfigController.updateConfig)
 router.delete('/:id', CwConfigController.deleteConfig)
-
+ 
 // Session-specific operations
 router.get('/session/:sessionId', CwConfigController.getConfigBySessionId)
 router.put('/session/:sessionId', CwConfigController.updateConfigBySessionId)

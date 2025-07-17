@@ -45,4 +45,9 @@ export class MessageService{
             mimetype: 'audio/ogg; codecs=opus'
         })
     }
+
+    async readMessages(jid: string, messageKeys: { remoteJid: string, id: string, participant?: string }[]) {
+        if (!this.connection['sock']) throw new Error('Not Connected')
+        return await this.connection['sock']!.readMessages(messageKeys)
+    }
 }

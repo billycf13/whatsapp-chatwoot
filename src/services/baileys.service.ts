@@ -43,6 +43,9 @@ export class BaileysConnection extends EventEmitter{
                     keys: makeCacheableSignalKeyStore(state.keys)
                 }
             })
+            
+            // ✅ Set socket ke handler setelah socket dibuat
+            this.handler.setSocket(this.sock)
 
             this.sock.ev.on('connection.update', async (update) => {
                 if(update.qr) {
@@ -84,6 +87,8 @@ export class BaileysConnection extends EventEmitter{
                     }
                 } else if(update.connection === 'open') {
                     this.reconnectAttempts = 0
+                    // ✅ Update socket reference saat connection terbuka
+                    this.handler.setSocket(this.sock)
                     // Ambil nomor HP dari user.id
                     const userId = this.sock?.user?.id
                     const phoneNumber = userId ? userId.split(/[:@]/)[0] : ''

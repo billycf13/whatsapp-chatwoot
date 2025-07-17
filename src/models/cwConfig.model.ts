@@ -4,7 +4,7 @@ const ChatwootConfigSchema = new mongoose.Schema({
     sessionId: {
         type: String,
         required: true,
-        ref: 'Session',
+        // Hapus baris ref: 'Session',
         index: true
     },
     baseUrl: {
