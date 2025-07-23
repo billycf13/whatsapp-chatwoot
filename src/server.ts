@@ -5,6 +5,9 @@ import path from 'path'
 import fs from 'fs'
 import { ConnectionManager } from './services/wa.connection.manager'
 import WebSocket from 'ws'
+import { MessageService } from './services/wa.message.serive'
+import { Session } from './models/session.model'
+import cron from 'node-cron'
 
 dotenv.config()
 
@@ -90,3 +93,83 @@ app.listen(port, () => {
 })
 
 export { wsClients }
+
+/**
+ * Fungsi untuk mengatur status presence untuk semua sesi
+ * @param presence Status presence ('available' atau 'unavailable')
+ */
+async function updatePresenceForAllSessions(presence: 'available' | 'unavailable') {
+    try {
+        const sessions = await Session.find()
+        
+        for (const session of sessions) {
+            try {
+                const conn = await ConnectionManager.getConnection(session.sessionId)
+                const msgService = new MessageService(conn)
+                await msgService.sendPresenceUpdate(presence)
+                console.log(`Updated presence to ${presence} for session ${session.sessionId}`)
+            } catch (error) {
+                console.error(`Error updating presence for session ${session.sessionId}:`, error)
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching sessions:', error)
+    }
+}
+
+/**
+ * Fungsi untuk memeriksa apakah hari ini adalah hari Minggu
+ * @returns Boolean yang menunjukkan apakah hari ini adalah hari Minggu
+ */
+function isSunday() {
+    return new Date().getDay() === 0; // 0 adalah hari Minggu dalam JavaScript
+}
+
+// Jadwalkan status online pada jam 08:00 WIB (kecuali hari Minggu)
+cron.schedule('0 8 * * *', async () => {
+    // Jika hari ini Minggu, jangan ubah status menjadi online
+    if (isSunday()) {
+        console.log('Today is Sunday, keeping status offline')
+        return
+    }
+    
+    console.log('Setting status to online (available) - scheduled at 08:00 WIB')
+    await updatePresenceForAllSessions('available')
+}, {
+    timezone: 'Asia/Jakarta'
+})
+
+// Jadwalkan status offline pada jam 16:00 WIB
+cron.schedule('0 16 * * *', async () => {
+    console.log('Setting status to offline (unavailable) - scheduled at 16:00 WIB')
+    await updatePresenceForAllSessions('unavailable')
+}, {
+    timezone: 'Asia/Jakarta'
+})
+
+// Jadwalkan status offline pada awal hari Minggu (00:00 WIB)
+cron.schedule('0 0 * * 0', async () => {
+    console.log('Setting status to offline (unavailable) - Sunday 00:00 WIB')
+    await updatePresenceForAllSessions('unavailable')
+}, {
+    timezone: 'Asia/Jakarta'
+});
+
+// Tambahkan pengecekan saat startup aplikasi untuk mengatur status sesuai dengan waktu saat ini
+(async () => {
+    // Tunggu koneksi database dan inisialisasi aplikasi
+    await new Promise(resolve => setTimeout(resolve, 5000))
+    
+    const now = new Date()
+    const currentHour = now.getHours()
+    const isSundayToday = isSunday()
+    
+    // Jika hari ini Minggu atau di luar jam kerja (sebelum 8 pagi atau setelah 4 sore), set status offline
+    if (isSundayToday || currentHour < 8 || currentHour >= 16) {
+        console.log('Setting initial status to offline (unavailable)')
+        await updatePresenceForAllSessions('unavailable')
+    } else {
+        console.log('Setting initial status to online (available)')
+        await updatePresenceForAllSessions('available')
+    }
+})();
