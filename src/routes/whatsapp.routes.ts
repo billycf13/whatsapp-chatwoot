@@ -13,5 +13,7 @@ router.post('/send/document', upload.array('document'), WhatsappController.sendD
 router.post('/logout', WhatsappController.logout)
 router.get('/sessions', WhatsappController.listSessions)
 router.patch('/session/:sessionId', WhatsappController.updateSession)
+// Tambahkan route baru untuk mengatur presence
+router.post('/presence', WhatsappController.updatePresence)
 
 export default router

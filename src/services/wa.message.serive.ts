@@ -1,4 +1,5 @@
 import { BaileysConnection } from './baileys.service'
+import { WAPresence } from '@whiskeysockets/baileys'
 
 export class MessageService{
     private connection: BaileysConnection
@@ -49,5 +50,16 @@ export class MessageService{
     async readMessages(jid: string, messageKeys: { remoteJid: string, id: string, participant?: string }[]) {
         if (!this.connection['sock']) throw new Error('Not Connected')
         return await this.connection['sock']!.readMessages(messageKeys)
+    }
+    
+    /**
+     * Mengatur status presence (online/offline) untuk WhatsApp
+     * @param presence Status presence ('available', 'unavailable', 'composing', 'recording', 'paused')
+     * @param jid Jabber ID tujuan (opsional)
+     * @returns Promise yang menyelesaikan operasi presence update
+     */
+    async sendPresenceUpdate(presence: WAPresence, jid?: string) {
+        if (!this.connection['sock']) throw new Error('Not Connected')
+        return await this.connection['sock']!.sendPresenceUpdate(presence, jid)
     }
 }

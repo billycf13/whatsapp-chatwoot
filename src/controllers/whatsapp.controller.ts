@@ -178,5 +178,36 @@ export class WhatsappController {
         } catch (err: any) {
             res.status(500).json({ error: err.message})
         }
-    } 
+    }
+
+    /**
+     * Endpoint untuk mengatur status presence (online/offline)
+     * @param req Request dengan sessionId, presence, dan jid opsional
+     * @param res Response dengan hasil operasi
+     */
+    static async updatePresence(req: Request, res: Response): Promise<any> {
+        const { sessionId, presence, jid } = req.body
+        
+        if (!sessionId || !presence) {
+            return res.status(400).json({ error: 'sessionId and presence are required' })
+        }
+        
+        // Validasi nilai presence
+        const validPresences = ['available', 'unavailable', 'composing', 'recording', 'paused']
+        if (!validPresences.includes(presence)) {
+            return res.status(400).json({ 
+                error: `Invalid presence value. Must be one of: ${validPresences.join(', ')}` 
+            })
+        }
+        
+        try {
+            const conn = await ConnectionManager.getConnection(sessionId)
+            const msgService = new MessageService(conn)
+            
+            await msgService.sendPresenceUpdate(presence, jid)
+            res.json({ success: true, message: `Presence updated to ${presence}` })
+        } catch (err: any) {
+            res.status(500).json({ error: err.message })
+        }
+    }
 }
