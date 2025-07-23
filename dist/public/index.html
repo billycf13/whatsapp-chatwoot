@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Chatwoot Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fab fa-whatsapp"></i>
+                    <span>WhatsApp Chatwoot</span>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-icon" id="refresh-btn">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <div class="user-menu">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <nav class="sidebar-nav">
+                <ul>
+                    <li>
+                        <a href="#" class="nav-link active" data-page="whatsapp">
+                            <i class="fab fa-whatsapp"></i>
+                            <span>WhatsApp</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="nav-link" data-page="chatwoot">
+                            <i class="fas fa-comments"></i>
+                            <span>Chatwoot Config</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- WhatsApp Page -->
+            <div class="page" id="whatsapp-page">
+                <div class="page-header">
+                    <h1>WhatsApp Sessions</h1>
+                    <button class="btn btn-primary" id="add-session-btn">
+                        <i class="fas fa-plus"></i>
+                        Add Session
+                    </button>
+                </div>
+                
+                <div class="sessions-grid" id="sessions-container">
+                    <!-- Sessions will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Chatwoot Page -->
+            <div class="page hidden" id="chatwoot-page">
+                <div class="page-header">
+                    <h1>Chatwoot Configurations</h1>
+                    <button class="btn btn-primary" id="add-config-btn">
+                        <i class="fas fa-plus"></i>
+                        Add Configuration
+                    </button>
+                </div>
+                
+                <div class="configs-grid" id="configs-container">
+                    <!-- Configurations will be loaded here -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Login Modal -->
+    <div class="modal" id="login-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add WhatsApp Session</h3>
+                <button class="modal-close" id="close-login-modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="login-tabs">
+                    <button class="tab-btn active" data-tab="qr">QR Code</button>
+                    <button class="tab-btn" data-tab="pairing">Pairing Code</button>
+                </div>
+                
+                <div class="tab-content" id="qr-tab">
+                    <div class="qr-section">
+                        <button class="btn btn-primary" id="generate-qr-btn">
+                            <i class="fas fa-qrcode"></i>
+                            Generate QR Code
+                        </button>
+                        <div class="qr-display" id="qr-display">
+                            <canvas id="qr-canvas"></canvas>
+                            <p class="qr-instruction">Scan this QR code with WhatsApp</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content hidden" id="pairing-tab">
+                    <form id="pairing-form">
+                        <div class="form-group">
+                            <label for="phone-number">Phone Number</label>
+                            <input type="text" id="phone-number" placeholder="628xxxxxxxxx" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-mobile-alt"></i>
+                            Generate Pairing Code
+                        </button>
+                        <div class="pairing-code-display" id="pairing-code-display">
+                            <div class="pairing-code" id="pairing-code"></div>
+                            <p class="pairing-instruction">Enter this code in WhatsApp</p>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Config Modal -->
+    <div class="modal" id="config-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="config-modal-title">Add Chatwoot Configuration</h3>
+                <button class="modal-close" id="close-config-modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="config-form">
+                    <div class="form-group">
+                        <label for="session-select">WhatsApp Session</label>
+                        <select id="session-select" required>
+                            <option value="">Select Session</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="base-url">Chatwoot Base URL</label>
+                        <input type="url" id="base-url" placeholder="https://your-chatwoot.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="agent-api-key">Agent API Key</label>
+                        <input type="text" id="agent-api-key" placeholder="Your Agent API Key" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="bot-api-key">Bot API Key</label>
+                        <input type="text" id="bot-api-key" placeholder="Your Bot API Key" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="account-id">Account ID</label>
+                        <input type="number" id="account-id" placeholder="Account ID" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="inbox-identifier">Inbox Identifier</label>
+                        <input type="text" id="inbox-identifier" placeholder="Inbox Identifier" required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="test-config-btn">
+                            <i class="fas fa-vial"></i>
+                            Test Connection
+                        </button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i>
+                            Save Configuration
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Loading...</p>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/whatsapp.js"></script>
+    <script src="js/chatwoot.js"></script>
+</body>
+</html>

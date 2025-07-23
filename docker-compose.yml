@@ -1,0 +1,39 @@
+services:
+  whatsapp-chatwoot:
+    build:
+      context: .
+      target: production
+    container_name: whatsapp-chatwoot-app
+    ports:
+      - "3080:3080"  # HTTP server
+      - "3081:3081"  # WebSocket server
+    environment:
+      - PORT=3080
+      - WSSPORT=3081
+      - SESSION_DIR=./sessions
+      - MONGODB_URI=mongodb://mongodb:27017/whatsapp-chatwoot
+    volumes:
+      - ./sessions:/app/sessions  # Persist WhatsApp sessions
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+    networks:
+      - whatsapp-network
+
+  mongodb:
+    image: mongo:7.0
+    container_name: whatsapp-chatwoot-mongodb
+    ports:
+      - "27018:27017"  # Ubah port host ke 27018
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+    networks:
+      - whatsapp-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  whatsapp-network:
+    driver: bridge

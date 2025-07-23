@@ -1,0 +1,10 @@
+services:
+  whatsapp-chatwoot:
+    build:
+      target: development
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev
+    environment:
+      - NODE_ENV=development

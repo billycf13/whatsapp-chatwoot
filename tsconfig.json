@@ -5,6 +5,17 @@
         "outDir": "dist",
         "rootDir": "src",
         "strict": true,
-        "esModuleInterop": true
-    }
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "moduleResolution": "node",
+        "allowSyntheticDefaultImports": true,
+        "resolveJsonModule": true
+    },
+    "include": [
+        "src/**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist"
+    ]
 }
