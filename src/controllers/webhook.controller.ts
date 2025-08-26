@@ -7,6 +7,7 @@ import { WhatsappController } from '../controllers/whatsapp.controller'
 import { WhatsAppHandler } from '../services/wa.handler'
 import axios from 'axios'
 import * as path from 'path'
+import { WAMessage } from '@whiskeysockets/baileys'
 // Import utility functions
 import { 
     processAttachmentForWhatsApp, 
@@ -314,11 +315,17 @@ export class WebhookController {
                                 chatwootMessageId: isReply
                             })
                             if (waMessageId) {
-                                const id = waMessageId.id
-                                const fromMe = waMessageId?.messageType === 'incoming' ? false : true
-
-                                // const find_content = 
-                                
+                                const quoted:Partial<WAMessage> = {
+                                    key: {
+                                        id: waMessageId.whatsappMessageId,
+                                        fromMe: waMessageId.messageType === 'incoming' ? false : true,
+                                        remoteJid: waMessageId.jid,
+                                    }, 
+                                    message: {
+                                        conversation: waMessageId.content || '',
+                                    }
+                                }
+                                await msgService.replyText(jid, message, quoted as WAMessage)
                             }
                         }
                         // Simpan mapping setelah berhasil mengirim text

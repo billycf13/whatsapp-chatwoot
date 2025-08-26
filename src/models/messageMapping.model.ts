@@ -2,6 +2,9 @@ import mongoose from 'mongoose'
 
 const MessageMappingSchema = new mongoose.Schema({
     sessionId: { type: String, required: true, index: true },
+    content: { type: String },
+    jid: {type: String},
+    fromMe: {type: Boolean},
     whatsappMessageId: { type: String, required: true, index: true },
     chatwootMessageId: { type: String, required: true, index: true }, // pakai String biar aman
     conversationId: { type: Number, required: true, index: true },
