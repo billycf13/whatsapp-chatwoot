@@ -44,4 +44,4 @@ MessageMappingSchema.statics.updateStatus = function(sessionId: string, whatsapp
     )
 }
 
-export const MessageMapping = mongoose.model('MessageMapping', MessageMappingSchema)
+export const MessageMappingData = mongoose.model('MessageMapping', MessageMappingSchema)

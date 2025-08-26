@@ -13,6 +13,7 @@ import {
     downloadAttachmentFromUrl,
     AttachmentProcessingOptions 
 } from '../utils'
+import { MessageMappingData } from '../models/messageMapping.model'
 
 // Hapus instansiasi global
 // const chatwootAppApi = new ChatwootAppApi()
@@ -127,7 +128,6 @@ export class WebhookController {
     static async handleChatwootWebhook(req: Request, res: Response): Promise<void> {
         const sessionId = req.params.sessionId
         const event = req.body
-        // console.log('Received webhook event:', event)
         
         // Buat unique key untuk message
         const messageKey = `${event.id}_${event.conversation?.id}_${sessionId}`
@@ -185,6 +185,8 @@ export class WebhookController {
                 
                 // Dapatkan instance WhatsAppHandler dengan sessionId
                 const waHandler = WhatsAppHandler.getInstance(sessionId)
+
+                const isReply = event.content_attributes?.in_reply_to
                 
                 try {
                     // Dapatkan koneksi WhatsApp
@@ -303,11 +305,22 @@ export class WebhookController {
                         }
                         
                     } else if (contentType === 'text' && message && message.trim()) {
-                        // Kirim pesan text saja
-                        // console.log('Sending text only:', sessionId, jid, message)
-                        sendResult = await msgService.sendText(jid, message)
-                        // console.info('Text sent:', sendResult.key.id)
-                        
+                        if (!isReply) {
+                            sendResult = await msgService.sendText(jid, message)
+                        } else {
+                            // cari id whatsapp
+                            const waMessageId = await MessageMappingData.findOne({
+                                sessionId: sessionId,
+                                chatwootMessageId: isReply
+                            })
+                            if (waMessageId) {
+                                const id = waMessageId.id
+                                const fromMe = waMessageId?.messageType === 'incoming' ? false : true
+
+                                // const find_content = 
+                                
+                            }
+                        }
                         // Simpan mapping setelah berhasil mengirim text
                         if (sendResult && sendResult.key && sendResult.key.id) {
                             const phone = jid.split('@')[0]

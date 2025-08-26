@@ -179,4 +179,19 @@ export class WhatsappController {
             res.status(500).json({ error: err.message})
         }
     } 
+
+    static async replyText(req: Request, res: Response): Promise<any> {
+        const { sessionId, jid, text, quotedMessage } = req.body
+        if (!jid || !quotedMessage || !text) {
+            return res.status(400).json({ error: 'jid, messageId and text are required' })
+        }
+        const conn = await ConnectionManager.getConnection(sessionId)
+        const msgService = new MessageService(conn)
+        try {
+            const result = await msgService.replyText(jid, text, quotedMessage)
+            res.json({ result })
+        } catch (err: any) {
+            res.status(500).json({ error: err.message })
+        }
+    }
 }

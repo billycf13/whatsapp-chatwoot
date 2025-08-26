@@ -291,6 +291,28 @@ export class ChatwootAppApi {
             throw error
         }
     }
+
+    async getMessageById(conversation_id: number, message_id: number) {
+        this.ensureInitialized()
+        const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/conversations/${conversation_id}/messages/${message_id}`
+        
+        try {
+            const response = await axios.get(url, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'api_access_token': this.agentApiToken
+                },
+                timeout: 10000
+            })
+            const message = response.data.payload
+            const targetedMessage = message.find((msg: any) => msg.id === message_id)
+            return targetedMessage || null
+        } catch (error: any) {
+            console.error('Error getting message by id:', error.response?.data || error.message)
+            throw error
+        }
+    }
+
     async createMessageReply(conversation_id: number, content: string, messageType: string = 'outgoing', source_id: string = '', in_reply_to: any = null) {
         this.ensureInitialized()
         const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/conversations/${conversation_id}/messages`
