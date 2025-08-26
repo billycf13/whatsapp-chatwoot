@@ -93,14 +93,15 @@ export class ChatwootAppApi {
         }
     }
 
-    async createMessage(conversation_id: number, content: string, messageType: string = 'outgoing') {
+    async createMessage(conversation_id: number, content: string, messageType: string = 'outgoing', source_id: string = '') {
         this.ensureInitialized()
         const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/conversations/${conversation_id}/messages`
         
         try {
             const response = await axios.post(url, {
                 content,
-                message_type: messageType
+                message_type: messageType,
+                source_id
             }, {
                 headers: {
                     'Content-Type': 'application/json',
@@ -108,6 +109,8 @@ export class ChatwootAppApi {
                 },
                 timeout: 10000
             })
+
+            // console.log('Message created successfully:', response.data) 
             return response.data
         } catch (error: any) {
             console.error('Error creating message:', error.response?.data || error.message)
@@ -175,7 +178,8 @@ export class ChatwootAppApi {
     async createMessageWithAttachment(
         conversation_id: number,
         content: string,
-        attachments: AttachmentData[] = []
+        attachments: AttachmentData[] = [],
+        source_id: string = ''
     ) {
         this.ensureInitialized()
         const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/conversations/${conversation_id}/messages`
@@ -201,13 +205,15 @@ export class ChatwootAppApi {
             const response = await axios.post(url, formData, {
                 headers: {
                     ...formData.getHeaders(),
-                    'api_access_token': this.botApiToken
+                    'api_access_token': this.botApiToken,
+                    'source_id': source_id
                 },
                 maxContentLength: Infinity,
                 maxBodyLength: Infinity,
                 timeout: 30000
             })
             
+            // console.log('Message created successfully:', response.data) 
             return response.data
         } catch (error: any) {
             console.error('Error creating message with attachment via App API:', error.response?.data || error.message)
@@ -230,7 +236,7 @@ export class ChatwootAppApi {
                 timeout: 10000
             })
             
-            console.log('Message status updated successfully:', response.data)
+            // console.log('Message status updated successfully:', response.data)
             return response.data
         } catch (error: any) {
             console.error('Error updating message status:', {
@@ -242,4 +248,75 @@ export class ChatwootAppApi {
             throw error
         }
     }
+
+    async getMessage(conversation_id: number) {
+        this.ensureInitialized()
+        const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/conversations/${conversation_id}/messages`
+        
+        try {
+            const response = await axios.get(url, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'api_access_token': this.agentApiToken
+                },
+                timeout: 10000
+            })
+            return response.data
+        } catch (error: any) {
+            console.error('Error getting message:', error.response?.data || error.message)
+            throw error
+        }
+    }
+
+    async getMessageBySourceId(conversation_id: number, source_id: string) {
+        this.ensureInitialized()
+        const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/conversations/${conversation_id}/messages`
+        
+        try {
+            const response = await axios.get(url, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'api_access_token': this.agentApiToken
+                },
+                timeout: 10000
+            })
+            
+            // Filter pesan berdasarkan source_id
+            const messages = response.data.payload
+            const targetMessage = messages.find((msg: any) => msg.source_id === source_id)
+            
+            return targetMessage || null
+        } catch (error: any) {
+            console.error('Error getting message by source_id:', error.response?.data || error.message)
+            throw error
+        }
+    }
+    async createMessageReply(conversation_id: number, content: string, messageType: string = 'outgoing', source_id: string = '', in_reply_to: any = null) {
+        this.ensureInitialized()
+        const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/conversations/${conversation_id}/messages`
+        
+        try {
+            const response = await axios.post(url, {
+                content,
+                message_type: messageType,
+                source_id,
+                content_attributes: {
+                    in_reply_to
+                }
+            }, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'api_access_token': this.botApiToken
+                },
+                timeout: 10000
+            })
+
+            // console.log('Message created successfully:', response.data) 
+            return response.data
+        } catch (error: any) {
+            console.error('Error creating message:', error.response?.data || error.message)
+            throw error
+        }
+    }
+
 }

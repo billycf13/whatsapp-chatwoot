@@ -127,6 +127,7 @@ export class WebhookController {
     static async handleChatwootWebhook(req: Request, res: Response): Promise<void> {
         const sessionId = req.params.sessionId
         const event = req.body
+        // console.log('Received webhook event:', event)
         
         // Buat unique key untuk message
         const messageKey = `${event.id}_${event.conversation?.id}_${sessionId}`
@@ -170,7 +171,7 @@ export class WebhookController {
             const chatwootAppApi = chatwootAppApiResult as ChatwootAppApi
             
             const contact_id = Number(event.conversation.contact_inbox.contact_id)
-            
+            // console.log(event)
             try {
                 const showContact = await chatwootAppApi.showContact(contact_id)
                 const identifier = showContact.payload.identifier
@@ -179,6 +180,8 @@ export class WebhookController {
                 const contentType = event.content_type
                 const conversation_id = event.conversation.id
                 const message_id = event.id
+                const inbox_id = event.conversation.inbox_id
+                const contactid = event.conversation.contact_inbox.contact_id
                 
                 // Dapatkan instance WhatsAppHandler dengan sessionId
                 const waHandler = WhatsAppHandler.getInstance(sessionId)
@@ -286,7 +289,9 @@ export class WebhookController {
                                         sendResult.key.id,
                                         conversation_id,
                                         message_id,
-                                        phone
+                                        phone,
+                                        contactid,
+                                        inbox_id
                                     )
                                     // console.log('Message mapping stored for attachment:', sendResult.key.id)
                                 }
@@ -301,7 +306,7 @@ export class WebhookController {
                         // Kirim pesan text saja
                         // console.log('Sending text only:', sessionId, jid, message)
                         sendResult = await msgService.sendText(jid, message)
-                        // console.log('Text sent:', sendResult)
+                        // console.info('Text sent:', sendResult.key.id)
                         
                         // Simpan mapping setelah berhasil mengirim text
                         if (sendResult && sendResult.key && sendResult.key.id) {
@@ -310,7 +315,9 @@ export class WebhookController {
                                 sendResult.key.id,
                                 conversation_id,
                                 message_id,
-                                phone
+                                phone,
+                                contactid,
+                                inbox_id
                             )
                             // console.log('Message mapping stored for text:', sendResult.key.id)
                         }

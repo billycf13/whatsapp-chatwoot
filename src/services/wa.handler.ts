@@ -2,6 +2,8 @@ import { WAMessage, WAMessageUpdate, Contact, downloadMediaMessage } from '@whis
 import { ChatwootAppApi } from './cw.appApi'
 import { ChatwootClientApi } from './cw.clientApi'
 import { ChatwootConfig } from '../models/cwConfig.model'
+import { MessageMapping } from '../models/messageMapping.model'
+
 import { 
     processWhatsAppMedia, 
     getWhatsAppMediaInfo, 
@@ -16,7 +18,7 @@ export class WhatsAppHandler {
     private sessionId: string
     private configInitialized: boolean = false
     private sock: any = null
-    private messageMapping = new Map<string, { conversation_id: number, message_id: number, phone: string, lastStatus?: number }>()
+    private messageMapping = new Map<string, { conversation_id: number, message_id: number, phone: string, lastStatus?: number, contactid: string, inbox_id: string }>()
     // Tambahkan properti incomingMessages yang hilang
     private incomingMessages = new Map<string, { messageId: string, jid: string, conversationId: number }>()
     
@@ -74,7 +76,7 @@ export class WhatsAppHandler {
         for (const update of updates) {
             const messageId = update.key.id
             const status = update.update?.status
-            console.log(update)
+            // console.log(update)
             
             if (status && messageId) {
                 await this.updateChatwootMessageStatus(messageId, status)
@@ -138,13 +140,15 @@ export class WhatsAppHandler {
         }
     }
     
-    public storeMessageMapping(whatsappMessageId: string, conversation_id: number, message_id: number, phone: string) {
-        console.log(`Storing message mapping: ${whatsappMessageId} -> conv:${conversation_id}, msg:${message_id}, phone:${phone}`)
+    public storeMessageMapping(whatsappMessageId: string, conversation_id: number, message_id: number, phone: string, contactid: string = '', inbox_id: string = '') {
+        // console.log(`Storing message mapping: ${whatsappMessageId} -> conv:${conversation_id}, msg:${message_id}, phone:${phone}`)
         this.messageMapping.set(whatsappMessageId, {
             conversation_id,
             message_id,
             phone,
-            lastStatus: 1
+            lastStatus: 1,
+            contactid,
+            inbox_id
         })
         
         setTimeout(() => {
@@ -163,8 +167,6 @@ export class WhatsAppHandler {
 
     public async handleMessageUpsert(messages: WAMessage[]) {
         if (!this.checkConfigInitialized()) return
-        console.log('pesan masuk ', messages)
-        console.log('pesan masuk ', messages[0].message)
         const sessionId = this.sessionId
         const getInboxIdentifier = await ChatwootConfig.findOne({ sessionId })
         if (getInboxIdentifier?.inboxIdentifier !== '') {
@@ -187,7 +189,7 @@ export class WhatsAppHandler {
         const jid = message.key.remoteJid!
         const phone = jid.split('@')[0]
         const messageId = message.key.id!
-        
+
         const { messageContent, attachments } = await this.processMessageContent(message)
         
         // Skip jika tidak ada konten (seperti protocol messages)
@@ -212,13 +214,54 @@ export class WhatsAppHandler {
             this.incomingMessages.delete(messageId)
         }, 24 * 60 * 60 * 1000)
         
-        await this.sendMessageToChatwoot(
-            inbox_identifier, 
-            contact_identifier, 
-            conversation_id, 
-            messageContent, 
-            attachments
-        )
+        if (message.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
+            console.log('ini id pesan yang di quote:', message.message.extendedTextMessage.contextInfo.stanzaId)
+            
+            // Cari kontak
+            const getContact = await this.chatwootAppApi!.searchContact(phone!)
+            if (getContact.payload.length === 0) {
+                console.log('Contact not found')
+                return
+            }
+            
+            const contact_id = getContact.payload[0].id
+            // Cari percakapan
+            const getConversation = await this.chatwootAppApi!.getConversationId(contact_id)
+            if (!getConversation.payload || getConversation.payload.length === 0) {
+                console.log('Conversation not found')
+                return
+            }
+            const conversation_id = getConversation.payload[0].id
+            const messageReply = message.message.extendedTextMessage.text
+            const stanzaId = message.message.extendedTextMessage.contextInfo.stanzaId!
+
+            const getMessage = await this.chatwootAppApi!.getMessageBySourceId(
+                conversation_id,
+                stanzaId
+            )
+            if (getMessage) {
+                await this.chatwootAppApi!.createMessageReply(
+                    conversation_id,
+                    messageReply || '',
+                    'incoming',
+                    getMessage.source_id,
+                    getMessage.id
+                )
+            }
+    
+        } else {
+            const send = await this.sendMessageToChatwoot(
+                inbox_identifier, 
+                contact_identifier, 
+                conversation_id, 
+                messageContent, 
+                attachments,
+                messageId
+            )
+            if (send) {
+                console.log('chatwoot message id ' + send.id + ' whatsapp message id ' + send.source_id + ' contact id ' + send.inbox_id + ' conversation id '+ send.conversation_id)
+            }
+        }
     }
     
     // Method untuk menandai conversation sebagai dibaca di WhatsApp
@@ -244,15 +287,13 @@ export class WhatsAppHandler {
             if (messagesToRead.length > 0) {
                 // Gunakan Baileys readMessages untuk menandai sebagai dibaca
                 await this.sock.readMessages(messagesToRead)
-                console.log(`✅ Marked ${messagesToRead.length} WhatsApp messages as read for conversation ${conversationId}`)
+                // console.log(`✅ Marked ${messagesToRead.length} WhatsApp messages as read for conversation ${conversationId}`)
                 
                 // Hapus dari tracking setelah dibaca
                 messagesToRead.forEach(msg => {
                     this.incomingMessages.delete(msg.id)
                 })
-            } else {
-                console.log(`No unread messages found for conversation ${conversationId}`)
-            }
+            } 
         } catch (error) {
             console.error('❌ Error marking conversation as read:', error)
         }
@@ -261,6 +302,8 @@ export class WhatsAppHandler {
     private async processOutgoingMessage(message: WAMessage) {
         const msgId = message.key.id
         const msgInfo = this.messageMapping.get(msgId!)
+        
+        console.log('Outgoing WhatsApp message Id: ' + msgId + 'Chatwoot message Id: ' + msgInfo?.message_id + 'conversation Id: ' + msgInfo?.conversation_id + ' contactid: ' + msgInfo?.contactid + ' inbox_id '+msgInfo?.inbox_id)
         
         if (!msgInfo) {
             const phone = message.key.remoteJid?.split('@')[0]
@@ -287,13 +330,16 @@ export class WhatsAppHandler {
                 createMessage = await this.chatwootAppApi!.createMessageWithAttachment(
                     conversation_id,
                     messageContent,
-                    attachments
+                    attachments,
+                    msgId!
                 )
+                console.log('createMessage with attachment:', createMessage)
             } else {
                 createMessage = await this.chatwootAppApi!.createMessage(
                     conversation_id,
                     messageContent,
-                    'outgoing'
+                    'outgoing',
+                    msgId!
                 )
             }
     
@@ -447,7 +493,8 @@ export class WhatsAppHandler {
         contact_identifier: string,
         conversation_id: number,
         content: string,
-        attachments: any[] = []
+        attachments: any[] = [],
+        source_id: string = ''
     ) {
         if (!this.checkConfigInitialized()) return
         
@@ -462,23 +509,23 @@ export class WhatsAppHandler {
                     }))
                 })
                 
-                await this.chatwootClientApi!.createMessageWithAttachment(
-                    inbox_identifier,
-                    contact_identifier,
+                const send = await this.chatwootAppApi!.createMessageWithAttachment(
                     conversation_id,
                     content,
-                    attachments
+                    attachments,
+                    source_id
                 )
+                return send
             } else {
-                await this.chatwootClientApi!.createMessage(
-                    inbox_identifier,
-                    contact_identifier,
+                const send = await this.chatwootAppApi!.createMessage(
                     conversation_id,
-                    content
+                    content,
+                    'incoming',
+                    source_id
                 )
+                return send
             }
-            
-            console.log('Message sent successfully to Chatwoot')
+            // console.log('Message sent successfully to Chatwoot')
         } catch (error) {
             console.error('Error sending message to Chatwoot:', error)
         }
