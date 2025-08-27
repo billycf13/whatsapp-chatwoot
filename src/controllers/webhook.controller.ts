@@ -229,48 +229,33 @@ export class WebhookController {
                                     } as AttachmentProcessingOptions
                                 )
                                 
-                                // console.log('Processed attachment:', {
-                                //     originalName: attachment.file_name,
-                                //     processedName: processedAttachment.filename,
-                                //     mimeType: processedAttachment.mimetype,
-                                //     category: processedAttachment.category,
-                                //     size: processedAttachment.size
-                                // })
-                                
                                 // Kirim berdasarkan kategori file
                                 switch (processedAttachment.category) {
                                     case 'image':
                                         if (message && message.trim()) {
-                                            // console.log('Sending image with caption:', processedAttachment.filename, 'to', jid)
                                             sendResult = await msgService.sendImage(jid, processedAttachment.buffer, message)
                                         } else {
-                                            // console.log('Sending image without caption:', processedAttachment.filename, 'to', jid)
                                             sendResult = await msgService.sendImage(jid, processedAttachment.buffer)
                                         }
                                         break
                                         
                                     case 'video':
                                         if (message && message.trim()) {
-                                            // console.log('Sending video with caption:', processedAttachment.filename, 'to', jid)
                                             sendResult = await msgService.sendVideo(jid, processedAttachment.buffer, message)
                                         } else {
-                                            // console.log('Sending video without caption:', processedAttachment.filename, 'to', jid)
                                             sendResult = await msgService.sendVideo(jid, processedAttachment.buffer)
                                         }
                                         break
                                         
                                     case 'audio':
-                                        // console.log('Sending audio:', processedAttachment.filename, 'to', jid)
                                         sendResult = await msgService.sendAudio(jid, processedAttachment.buffer)
                                         
                                         if (message && message.trim()) {
-                                            // console.log('Sending text message after audio:', message)
                                             await msgService.sendText(jid, message)
                                         }
                                         break
                                         
                                     default: // document
-                                        // console.log('Sending document:', processedAttachment.filename, 'to', jid)
                                         sendResult = await msgService.sendDocument(
                                             jid, 
                                             processedAttachment.buffer, 
@@ -279,7 +264,6 @@ export class WebhookController {
                                         )
                                         
                                         if (message && message.trim()) {
-                                            // console.log('Sending text message after document:', message)
                                             await msgService.sendText(jid, message)
                                         }
                                         break
@@ -296,7 +280,6 @@ export class WebhookController {
                                         contactid,
                                         inbox_id
                                     )
-                                    // console.log('Message mapping stored for attachment:', sendResult.key.id)
                                 }
                                 
                             } catch (attachmentError) {
@@ -309,11 +292,13 @@ export class WebhookController {
                         if (!isReply) {
                             sendResult = await msgService.sendText(jid, message)
                         } else {
+                            console.log('isReply: ' + isReply)
                             // cari id whatsapp
                             const waMessageId = await MessageMappingData.findOne({
                                 sessionId: sessionId,
                                 chatwootMessageId: isReply
                             })
+                            console.log(waMessageId)
                             if (waMessageId) {
                                 const quoted:Partial<WAMessage> = {
                                     key: {
@@ -325,7 +310,21 @@ export class WebhookController {
                                         conversation: waMessageId.content || '',
                                     }
                                 }
-                                await msgService.replyText(jid, message, quoted as WAMessage)
+                                const replyResult = await msgService.replyText(jid, message, quoted as WAMessage)
+                                const update = await MessageMappingData.create({
+                                    sessionId: sessionId,
+                                    content: message,
+                                    jid: jid,
+                                    fromMe: true,
+                                    whatsappMessageId: replyResult?.key.id,
+                                    chatwootMessageId: message_id,
+                                    conversationId: conversation_id,
+                                    contactId: contactid,
+                                    inboxId: inbox_id,
+                                    messageType: 'outgoing',
+                                    waTimestamp: new Date(),
+                                })
+                                console.log(`update : ${update}`)
                             }
                         }
                         // Simpan mapping setelah berhasil mengirim text

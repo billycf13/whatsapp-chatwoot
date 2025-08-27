@@ -6,11 +6,11 @@ const MessageMappingSchema = new mongoose.Schema({
     jid: {type: String},
     fromMe: {type: Boolean},
     whatsappMessageId: { type: String, required: true, index: true },
-    chatwootMessageId: { type: String, required: true, index: true }, // pakai String biar aman
-    conversationId: { type: Number, required: true, index: true },
-    contactId: { type: Number, required: true },
-    inboxId: { type: Number, required: true },
-    messageType: { type: String, enum: ['incoming', 'outgoing'], required: true },
+    chatwootMessageId: { type: String, index: true }, // pakai String biar aman
+    conversationId: { type: Number, index: true },
+    contactId: { type: Number },
+    inboxId: { type: Number },
+    messageType: { type: String, enum: ['incoming', 'outgoing'] },
     waTimestamp: { type: Date, index: true }, // ganti nama timestamp biar jelas
     status: { type: String, enum: ['pending', 'sent', 'delivered', 'read', 'failed'], default: 'pending', index: true },
     externalSourceId: { type: String, index: true }, // kalau mau nyimpen stanzaId atau id lain
