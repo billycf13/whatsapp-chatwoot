@@ -127,6 +127,7 @@ export class WebhookController {
     static async handleChatwootWebhook(req: Request, res: Response): Promise<void> {
         const sessionId = req.params.sessionId
         const event = req.body
+	console.log(event)
         
         // Buat unique key untuk message
         const messageKey = `${event.id}_${event.conversation?.id}_${sessionId}`
@@ -148,7 +149,7 @@ export class WebhookController {
         // Proses message_created DAN message_updated untuk outgoing messages
         if ((event.event === 'message_created' || event.event === 'message_updated') && 
             event.sender.name !== 'syncAgent' && 
-            event.message_type === 'outgoing') {
+            event.message_type === 'outgoing' && event.private === false) {
             
             // Tandai message sebagai sudah diproses
             WebhookController.processedMessages.set(messageKey, currentTime)
