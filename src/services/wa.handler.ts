@@ -108,7 +108,7 @@ export class WhatsAppHandler {
                     chatwootStatus = 'read'
                     break
                 default:
-                    console.log('Unknown status:', status)
+                    // console.log('Unknown status:', status)
                     return
             }
             
@@ -200,13 +200,13 @@ export class WhatsAppHandler {
                 messageType: 'incoming',
                 waTimestamp: new Date(),
             })
-            console.log('pesan masuk, simpan ke database', data)
+            // console.log('pesan masuk, simpan ke database', data)
         }
 
         
         // Skip jika tidak ada konten (seperti protocol messages)
         if (!messageContent && attachments.length === 0) {
-            console.log('Skipping message with no content (likely system message)')
+            // console.log('Skipping message with no content (likely system message)')
             return
         }
         
@@ -250,7 +250,7 @@ export class WhatsAppHandler {
                         status: 'sent',
                         externalSourceId: send.source_id,
                     })
-                    console.log('data pesan reply dikirim ke chatwoot dan update data di database' + update)
+                    // console.log('data pesan reply dikirim ke chatwoot dan update data di database' + update)
                 }
             }
 
@@ -261,7 +261,8 @@ export class WhatsAppHandler {
                 conversation_id, 
                 messageContent, 
                 attachments,
-                messageId
+                messageId,
+                'incoming'
             )
             if (send) {
                 const update = await MessageMappingData.updateOne({
@@ -277,7 +278,7 @@ export class WhatsAppHandler {
                     status: 'sent',
                     externalSourceId: send.source_id,
                 })
-                console.log('data pesan biasa dikirim ke chatwoot dan update data di database' + update)
+                // console.log('data pesan biasa dikirim ke chatwoot dan update data di database' + update)
             }
         }
     }
@@ -353,16 +354,16 @@ export class WhatsAppHandler {
                 messageType: 'outgoing',
                 waTimestamp: new Date(),
             })
-            console.log('pesan keluar, simpan ke database', data)
+            // console.log('pesan keluar, simpan ke database', data)
             if (data.chatwootMessageId === undefined) {
                 if(message.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
-                    console.log('pesan kelar, type reply')
+                    // console.log('pesan kelar, type reply')
                     const find_reply_id = await MessageMappingData.findOne({
                         sessionId: this.sessionId,
                         whatsappMessageId: message.message.extendedTextMessage.contextInfo.stanzaId,
                     })
                     if (find_reply_id) {
-                        console.log('find_reply_id: ' + find_reply_id.chatwootMessageId)
+                        // console.log('find_reply_id: ' + find_reply_id.chatwootMessageId)
                         const send = await this.chatwootAppApi!.createMessageReply(
                             conversation_id,
                             messageContent || '',
@@ -377,11 +378,11 @@ export class WhatsAppHandler {
                             }, {
                                 chatwootMessageId: send.id,
                             })
-                            console.log('update data di database' + update)
+                            // console.log('update data di database' + update)
                         }
                     }
                 } else {
-                    console.log('pesan keluar, type biasa')
+                    // console.log('pesan keluar, type biasa')
                     const send = await this.chatwootAppApi!.createMessage(
                         conversation_id,
                         messageContent || '',
@@ -395,12 +396,12 @@ export class WhatsAppHandler {
                         }, {
                             chatwootMessageId: send.id,
                         })
-                        console.log('update data di database' + update)
+                        // console.log('update data di database' + update)
                     }
                 }
             }
         } else {
-            console.log('pesan keluar sudah ada, skip simpan ke database')
+            // console.log('pesan keluar sudah ada, skip simpan ke database')
         }
         
         if (!msgInfo) {
@@ -418,7 +419,7 @@ export class WhatsAppHandler {
                         msgId || undefined,
                         data.chatwootMessageId || undefined,
                     )
-                    console.log('createMessage id: ' + data.id)
+                    // console.log('createMessage id: ' + data.id)
                     const update = await MessageMappingData.updateOne({
                         sessionId: this.sessionId,
                         whatsappMessageId: msgId,
@@ -458,7 +459,7 @@ export class WhatsAppHandler {
                     status: 'sent',
                     externalSourceId: msgId,
                 })
-                console.log('data pesan keluar dikirim ke chatwoot dan update data di database' + update)
+                // console.log('data pesan keluar dikirim ke chatwoot dan update data di database' + update)
                 await this.updateChatwootMessageStatus(msgId!, 4)
             }
         }
@@ -482,28 +483,28 @@ export class WhatsAppHandler {
         
         // Skip protocol messages (sistem messages seperti ephemeral settings)
         if (message.message?.protocolMessage) {
-            console.log('Skipping protocol message (system message)')
+            // console.log('Skipping protocol message (system message)')
             return { messageContent: '', attachments: [] }
         }
         
         // Tangani media messages
         if (hasWhatsAppMedia(message.message)) {
             try {
-                console.log('Processing WhatsApp media...', {
-                    messageType: Object.keys(message.message || {}),
-                    hasMedia: hasWhatsAppMedia(message.message),
-                    hasSocket: !!this.sock
-                })
+                // console.log('Processing WhatsApp media...', {
+                //     messageType: Object.keys(message.message || {}),
+                //     hasMedia: hasWhatsAppMedia(message.message),
+                //     hasSocket: !!this.sock
+                // })
                 
                 const processedAttachment = await processWhatsAppMedia(message, this.sock)
                 
                 if (processedAttachment) {
-                    console.log('Media processed successfully:', {
-                        filename: processedAttachment.filename,
-                        mimetype: processedAttachment.mimetype,
-                        bufferSize: processedAttachment.buffer?.length,
-                        category: processedAttachment.category
-                    })
+                    // console.log('Media processed successfully:', {
+                    //     filename: processedAttachment.filename,
+                    //     mimetype: processedAttachment.mimetype,
+                    //     bufferSize: processedAttachment.buffer?.length,
+                    //     category: processedAttachment.category
+                    // })
                     
                     attachments.push({
                         buffer: processedAttachment.buffer,
@@ -511,7 +512,7 @@ export class WhatsAppHandler {
                         filename: processedAttachment.filename
                     })
                 } else {
-                    console.log('No processed attachment returned')
+                    // console.log('No processed attachment returned')
                 }
                 
                 messageContent = getWhatsAppMediaCaption(message.message) || ''
@@ -529,10 +530,10 @@ export class WhatsAppHandler {
             messageContent = '[Pesan tidak didukung]'
         }
         
-        console.log('Final message content:', {
-            messageContent,
-            attachmentCount: attachments.length
-        })
+        // console.log('Final message content:', {
+        //     messageContent,
+        //     attachmentCount: attachments.length
+        // })
         
         return { messageContent, attachments }
     }
@@ -558,16 +559,16 @@ export class WhatsAppHandler {
             })
             // contact_identifier = createContact.source_id
             if (createContact) {
-                console.log('contact created successfully')
+                // console.log('contact created successfully')
             }
             const searchContact = await this.chatwootAppApi!.searchContact(phone)
-            console.log('search contact',searchContact.payload)
+            // console.log('search contact',searchContact.payload)
             contact_identifier =searchContact.payload[0].contact_inboxes[0].source_id
-            console.log('contact identifier: ', contact_identifier)
-            console.log('innbox identifier: ', inbox_identifier)
+            // console.log('contact identifier: ', contact_identifier)
+            // console.log('innbox identifier: ', inbox_identifier)
             const createConversation = await this.chatwootClientApi!.createConversation(inbox_identifier, contact_identifier)
             conversation_id = createConversation.id
-            console.log('create conversation: ',createConversation)
+            // console.log('create conversation: ',createConversation)
         } else {
             contact_identifier = contact.payload[0].contact_inboxes[0].source_id
             const contact_id = contact.payload[0].id
@@ -598,11 +599,11 @@ export class WhatsAppHandler {
 
     public handleContactUpsert(contacts: Contact[]) {
         for (const contact of contacts) {
-            console.log('Contact Update:', {
-                id: contact.id,
-                name: contact.name || contact.notify,
-                contact: contact
-            })
+            // console.log('Contact Update:', {
+            //     id: contact.id,
+            //     name: contact.name || contact.notify,
+            //     contact: contact
+            // })
         }
     }
 
@@ -612,26 +613,28 @@ export class WhatsAppHandler {
         conversation_id: number,
         content: string,
         attachments: any[] = [],
-        source_id: string = ''
+        source_id: string = '',
+        message_type: string
     ) {
         if (!this.checkConfigInitialized()) return
         
         try {
             if (attachments.length > 0) {
-                console.log('Sending message with attachments:', {
-                    attachmentCount: attachments.length,
-                    attachmentInfo: attachments.map(att => ({
-                        filename: att.filename,
-                        mimetype: att.mimetype,
-                        bufferSize: att.buffer?.length
-                    }))
-                })
+                // console.log('Sending message with attachments:', {
+                //     attachmentCount: attachments.length,
+                //     attachmentInfo: attachments.map(att => ({
+                //         filename: att.filename,
+                //         mimetype: att.mimetype,
+                //         bufferSize: att.buffer?.length
+                //     }))
+                // })
                 
                 const send = await this.chatwootAppApi!.createMessageWithAttachment(
                     conversation_id,
                     content,
                     attachments,
-                    source_id
+                    source_id,
+                    message_type
                 )
                 return send
             } else {

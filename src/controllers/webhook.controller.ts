@@ -129,7 +129,7 @@ export class WebhookController {
     static async handleChatwootWebhook(req: Request, res: Response): Promise<void> {
         const sessionId = req.params.sessionId
         const event = req.body
-	console.log(event)
+	// console.log(event)
         
         // Buat unique key untuk message
         const messageKey = `${event.id}_${event.conversation?.id}_${sessionId}`
@@ -293,13 +293,13 @@ export class WebhookController {
                         if (!isReply) {
                             sendResult = await msgService.sendText(jid, message)
                         } else {
-                            console.log('isReply: ' + isReply)
+                            // console.log('isReply: ' + isReply)
                             // cari id whatsapp
                             const waMessageId = await MessageMappingData.findOne({
                                 sessionId: sessionId,
                                 chatwootMessageId: isReply
                             })
-                            console.log(waMessageId)
+                            // console.log(waMessageId)
                             if (waMessageId) {
                                 const quoted:Partial<WAMessage> = {
                                     key: {
@@ -325,7 +325,7 @@ export class WebhookController {
                                     messageType: 'outgoing',
                                     waTimestamp: new Date(),
                                 })
-                                console.log(`update : ${update}`)
+                                // console.log(`update : ${update}`)
                             }
                         }
                         // Simpan mapping setelah berhasil mengirim text

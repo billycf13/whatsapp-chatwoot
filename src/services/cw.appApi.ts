@@ -179,7 +179,8 @@ export class ChatwootAppApi {
         conversation_id: number,
         content: string,
         attachments: AttachmentData[] = [],
-        source_id: string = ''
+        source_id: string = '',
+        message_type = 'outgoing'
     ) {
         this.ensureInitialized()
         const url = `${this.baseUrl}/api/v1/accounts/${this.accountId}/conversations/${conversation_id}/messages`
@@ -189,7 +190,7 @@ export class ChatwootAppApi {
             const formData = new FormData()
             
             formData.append('content', content)
-            formData.append('message_type', 'outgoing')
+            formData.append('message_type', message_type)
             
             for (const attachment of attachments) {
                 if (!Buffer.isBuffer(attachment.buffer)) {
