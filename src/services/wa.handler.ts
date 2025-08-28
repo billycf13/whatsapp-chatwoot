@@ -2,6 +2,8 @@ import { WAMessage, WAMessageUpdate, Contact, downloadMediaMessage } from '@whis
 import { ChatwootAppApi } from './cw.appApi'
 import { ChatwootClientApi } from './cw.clientApi'
 import { ChatwootConfig } from '../models/cwConfig.model'
+import { MessageMappingData } from '../models/messageMapping.model'
+
 import { 
     processWhatsAppMedia, 
     getWhatsAppMediaInfo, 
@@ -16,7 +18,7 @@ export class WhatsAppHandler {
     private sessionId: string
     private configInitialized: boolean = false
     private sock: any = null
-    private messageMapping = new Map<string, { conversation_id: number, message_id: number, phone: string, lastStatus?: number }>()
+    private messageMapping = new Map<string, { conversation_id: number, message_id: number, phone: string, lastStatus?: number, contactid: string, inbox_id: string }>()
     // Tambahkan properti incomingMessages yang hilang
     private incomingMessages = new Map<string, { messageId: string, jid: string, conversationId: number }>()
     
@@ -31,19 +33,16 @@ export class WhatsAppHandler {
             const clientApiResult = await ChatwootClientApi.fromSessionId(this.sessionId)
             
             if ('success' in appApiResult && !appApiResult.success) {
-                console.log('ChatwootAppApi:', appApiResult.message)
                 return
             }
             
             if ('success' in clientApiResult && !clientApiResult.success) {
-                console.log('ChatwootClientApi:', clientApiResult.message)
                 return
             }
             
             this.chatwootAppApi = appApiResult as ChatwootAppApi
             this.chatwootClientApi = clientApiResult as ChatwootClientApi
             this.configInitialized = true
-            console.log('Chatwoot APIs initialized successfully')
         } catch (error) {
             console.error('Error initializing Chatwoot APIs:', error)
         }
@@ -58,7 +57,6 @@ export class WhatsAppHandler {
     
     private checkConfigInitialized(): boolean {
         if (!this.configInitialized || !this.chatwootAppApi || !this.chatwootClientApi) {
-            console.log('Konfigurasi Chatwoot belum diset atau belum diinisialisasi')
             return false
         }
         return true
@@ -74,7 +72,6 @@ export class WhatsAppHandler {
         for (const update of updates) {
             const messageId = update.key.id
             const status = update.update?.status
-            console.log(update)
             
             if (status && messageId) {
                 await this.updateChatwootMessageStatus(messageId, status)
@@ -89,12 +86,10 @@ export class WhatsAppHandler {
             const messageInfo = this.messageMapping.get(whatsappMessageId)
             
             if (!messageInfo) {
-                // console.log('Message mapping not found for:', whatsappMessageId)
                 return
             }
             
             if (messageInfo.lastStatus && status <= messageInfo.lastStatus) {
-                // console.log(`Ignoring status downgrade: ${whatsappMessageId} from ${messageInfo.lastStatus} to ${status}`)
                 return
             }
             
@@ -117,8 +112,6 @@ export class WhatsAppHandler {
                     return
             }
             
-            // console.log(`Updating message status in Chatwoot: ${whatsappMessageId} -> ${chatwootStatus} (from status ${messageInfo.lastStatus || 'none'} to ${status})`)
-            
             messageInfo.lastStatus = status
             this.messageMapping.set(whatsappMessageId, messageInfo)
             
@@ -128,7 +121,6 @@ export class WhatsAppHandler {
                     messageInfo.message_id,
                     chatwootStatus
                 )
-                // console.log(`Message status updated successfully: ${chatwootStatus}`)
             } catch (apiError) {
                 console.error('Message status update API not available, logging status only:', chatwootStatus)
             }
@@ -138,18 +130,18 @@ export class WhatsAppHandler {
         }
     }
     
-    public storeMessageMapping(whatsappMessageId: string, conversation_id: number, message_id: number, phone: string) {
-        console.log(`Storing message mapping: ${whatsappMessageId} -> conv:${conversation_id}, msg:${message_id}, phone:${phone}`)
+    public storeMessageMapping(whatsappMessageId: string, conversation_id: number, message_id: number, phone: string, contactid: string = '', inbox_id: string = '') {
         this.messageMapping.set(whatsappMessageId, {
             conversation_id,
             message_id,
             phone,
-            lastStatus: 1
+            lastStatus: 1,
+            contactid,
+            inbox_id
         })
         
         setTimeout(() => {
             this.messageMapping.delete(whatsappMessageId)
-            console.log(`Cleaned up message mapping: ${whatsappMessageId}`)
         }, 24 * 60 * 60 * 1000)
     }
     
@@ -163,8 +155,6 @@ export class WhatsAppHandler {
 
     public async handleMessageUpsert(messages: WAMessage[]) {
         if (!this.checkConfigInitialized()) return
-        console.log('pesan masuk ', messages)
-        console.log('pesan masuk ', messages[0].message)
         const sessionId = this.sessionId
         const getInboxIdentifier = await ChatwootConfig.findOne({ sessionId })
         if (getInboxIdentifier?.inboxIdentifier !== '') {
@@ -187,8 +177,32 @@ export class WhatsAppHandler {
         const jid = message.key.remoteJid!
         const phone = jid.split('@')[0]
         const messageId = message.key.id!
-        
+
         const { messageContent, attachments } = await this.processMessageContent(message)
+
+        const { contact_identifier, conversation_id } = await this.handleContactAndConversation(
+            message, phone, inbox_identifier
+        )
+
+        const existing = await MessageMappingData.findOne({
+            sessionId: this.sessionId,
+            whatsappMessageId: messageId,
+        })
+
+        if (!existing) {
+            const data = await MessageMappingData.create({
+                sessionId: this.sessionId,
+                whatsappMessageId: messageId,
+                conversationId: conversation_id,
+                content: messageContent,
+                jid,
+                fromMe: false,
+                messageType: 'incoming',
+                waTimestamp: new Date(),
+            })
+            console.log('pesan masuk, simpan ke database', data)
+        }
+
         
         // Skip jika tidak ada konten (seperti protocol messages)
         if (!messageContent && attachments.length === 0) {
@@ -196,9 +210,6 @@ export class WhatsAppHandler {
             return
         }
         
-        const { contact_identifier, conversation_id } = await this.handleContactAndConversation(
-            message, phone, inbox_identifier
-        )
         
         // Simpan pesan masuk untuk tracking read status
         this.incomingMessages.set(messageId, {
@@ -212,19 +223,68 @@ export class WhatsAppHandler {
             this.incomingMessages.delete(messageId)
         }, 24 * 60 * 60 * 1000)
         
-        await this.sendMessageToChatwoot(
-            inbox_identifier, 
-            contact_identifier, 
-            conversation_id, 
-            messageContent, 
-            attachments
-        )
+        if (message.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
+            const data = await MessageMappingData.findOne({
+                sessionId: this.sessionId,
+                whatsappMessageId: message.message.extendedTextMessage.contextInfo.stanzaId,
+            })
+            if (data) {
+                const send = await this.chatwootAppApi!.createMessageReply(
+                    conversation_id,
+                    messageContent || '',
+                    'incoming',
+                    messageId || undefined,
+                    data.chatwootMessageId || undefined,
+                )
+                if (send) {
+                    const update = await MessageMappingData.updateOne({
+                        sessionId: this.sessionId,
+                        whatsappMessageId: messageId,
+                    }, {
+                        chatwootMessageId: send.id,
+                        conversationId: send.conversation_id,
+                        contactId: send.inbox_id,
+                        inboxId: send.inbox_id,
+                        messageType: 'incoming',
+                        waTimestamp: new Date(),
+                        status: 'sent',
+                        externalSourceId: send.source_id,
+                    })
+                    console.log('data pesan reply dikirim ke chatwoot dan update data di database' + update)
+                }
+            }
+
+        } else {
+            const send = await this.sendMessageToChatwoot(
+                inbox_identifier, 
+                contact_identifier, 
+                conversation_id, 
+                messageContent, 
+                attachments,
+                messageId
+            )
+            if (send) {
+                const update = await MessageMappingData.updateOne({
+                    sessionId: this.sessionId,
+                    whatsappMessageId: messageId,
+                    }, {
+                    chatwootMessageId: send.id,
+                    conversationId: send.conversation_id,
+                    contactId: send.inbox_id,
+                    inboxId: send.inbox_id,
+                    messageType: 'incoming',
+                    waTimestamp: new Date(),
+                    status: 'sent',
+                    externalSourceId: send.source_id,
+                })
+                console.log('data pesan biasa dikirim ke chatwoot dan update data di database' + update)
+            }
+        }
     }
     
     // Method untuk menandai conversation sebagai dibaca di WhatsApp
     public async markConversationAsRead(conversationId: number) {
         if (!this.sock) {
-            console.log('WhatsApp socket not available')
             return
         }
         
@@ -244,15 +304,12 @@ export class WhatsAppHandler {
             if (messagesToRead.length > 0) {
                 // Gunakan Baileys readMessages untuk menandai sebagai dibaca
                 await this.sock.readMessages(messagesToRead)
-                console.log(`✅ Marked ${messagesToRead.length} WhatsApp messages as read for conversation ${conversationId}`)
                 
                 // Hapus dari tracking setelah dibaca
                 messagesToRead.forEach(msg => {
                     this.incomingMessages.delete(msg.id)
                 })
-            } else {
-                console.log(`No unread messages found for conversation ${conversationId}`)
-            }
+            } 
         } catch (error) {
             console.error('❌ Error marking conversation as read:', error)
         }
@@ -261,44 +318,147 @@ export class WhatsAppHandler {
     private async processOutgoingMessage(message: WAMessage) {
         const msgId = message.key.id
         const msgInfo = this.messageMapping.get(msgId!)
-        
-        if (!msgInfo) {
-            const phone = message.key.remoteJid?.split('@')[0]
-            
-            const { messageContent, attachments } = await this.processMessageContent(message)
-            
+
+        const { messageContent, attachments } = await this.processMessageContent(message)
+
+        const phone = message.key.remoteJid?.split('@')[0]
+                        
             const getContact = await this.chatwootAppApi!.searchContact(phone!)
             if (getContact.payload.length === 0) {
-                console.log('Contact not found')
                 return
             }
             
             const contact_id = getContact.payload[0].id
             const getConversation = await this.chatwootAppApi!.getConversationId(contact_id)
             if (!getConversation.payload || getConversation.payload.length === 0) {
-                console.log('Conversation not found')
                 return
             }
             
             const conversation_id = getConversation.payload[0].id
-    
+
+        const existing = await MessageMappingData.findOne({
+            sessionId: this.sessionId,
+            whatsappMessageId: msgId,
+        })
+        if (!existing) {
+            const data = await MessageMappingData.create({
+                sessionId: this.sessionId,
+                whatsappMessageId: msgId,
+                chatwootMessageId: msgInfo?.message_id,
+                conversationId: conversation_id,
+                contactId: contact_id,
+                content: messageContent,
+                jid: message.key.remoteJid,
+                fromMe: true,
+                messageType: 'outgoing',
+                waTimestamp: new Date(),
+            })
+            console.log('pesan keluar, simpan ke database', data)
+            if (data.chatwootMessageId === undefined) {
+                if(message.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
+                    console.log('pesan kelar, type reply')
+                    const find_reply_id = await MessageMappingData.findOne({
+                        sessionId: this.sessionId,
+                        whatsappMessageId: message.message.extendedTextMessage.contextInfo.stanzaId,
+                    })
+                    if (find_reply_id) {
+                        console.log('find_reply_id: ' + find_reply_id.chatwootMessageId)
+                        const send = await this.chatwootAppApi!.createMessageReply(
+                            conversation_id,
+                            messageContent || '',
+                            'outgoing',
+                            msgId || undefined,
+                            find_reply_id.chatwootMessageId || undefined,
+                        )
+                        if (send) {
+                            const update = await MessageMappingData.updateOne({
+                                sessionId: this.sessionId,
+                                whatsappMessageId: msgId,
+                            }, {
+                                chatwootMessageId: send.id,
+                            })
+                            console.log('update data di database' + update)
+                        }
+                    }
+                } else {
+                    console.log('pesan keluar, type biasa')
+                    const send = await this.chatwootAppApi!.createMessage(
+                        conversation_id,
+                        messageContent || '',
+                        'outgoing',
+                        msgId || undefined,
+                    )
+                    if (send) {
+                        const update = await MessageMappingData.updateOne({
+                            sessionId: this.sessionId,
+                            whatsappMessageId: msgId,
+                        }, {
+                            chatwootMessageId: send.id,
+                        })
+                        console.log('update data di database' + update)
+                    }
+                }
+            }
+        } else {
+            console.log('pesan keluar sudah ada, skip simpan ke database')
+        }
+        
+        if (!msgInfo) {
             let createMessage
-            if (attachments.length > 0) {
+            if (message.message?.extendedTextMessage?.contextInfo?.quotedMessage && existing?.chatwootMessageId === null) {
+                const data = await MessageMappingData.findOne({
+                    sessionId: this.sessionId,
+                    whatsappMessageId: message.message.extendedTextMessage.contextInfo.stanzaId,
+                })
+                if (data) {
+                    createMessage = await this.chatwootAppApi!.createMessageReply(
+                        conversation_id,
+                        messageContent || '',
+                        'outgoing',
+                        msgId || undefined,
+                        data.chatwootMessageId || undefined,
+                    )
+                    console.log('createMessage id: ' + data.id)
+                    const update = await MessageMappingData.updateOne({
+                        sessionId: this.sessionId,
+                        whatsappMessageId: msgId,
+                    }, {
+                        chatwootMessageId: createMessage.id,
+                    })
+                }
+            }
+            else if (attachments.length > 0) {
                 createMessage = await this.chatwootAppApi!.createMessageWithAttachment(
                     conversation_id,
                     messageContent,
-                    attachments
+                    attachments,
+                    msgId!
                 )
-            } else {
+            } else if (existing?.chatwootMessageId === null) {
                 createMessage = await this.chatwootAppApi!.createMessage(
                     conversation_id,
                     messageContent,
-                    'outgoing'
+                    'outgoing',
+                    msgId!
                 )
             }
     
             if (createMessage) {
                 this.storeMessageMapping(msgId!, conversation_id, createMessage.id, phone!)
+                const update = await MessageMappingData.updateOne({
+                    sessionId: this.sessionId,
+                    whatsappMessageId: msgId,
+                    }, {
+                    chatwootMessageId: createMessage.id,
+                    conversationId: conversation_id,
+                    contactId: contact_id,
+                    inboxId: createMessage.inbox_id,
+                    messageType: 'outgoing',
+                    waTimestamp: new Date(),
+                    status: 'sent',
+                    externalSourceId: msgId,
+                })
+                console.log('data pesan keluar dikirim ke chatwoot dan update data di database' + update)
                 await this.updateChatwootMessageStatus(msgId!, 4)
             }
         }
@@ -361,7 +521,11 @@ export class WhatsAppHandler {
                 const mediaInfo = getWhatsAppMediaInfo(message.message)
                 messageContent = `[${this.getMediaErrorMessage(mediaInfo.mediaType)} - Gagal diunduh]`
             }
-        } else {
+        } else if (message.message?.reactionMessage) {
+            messageContent = message.message.reactionMessage.text || ''
+        }
+        
+        else {
             messageContent = '[Pesan tidak didukung]'
         }
         
@@ -447,7 +611,8 @@ export class WhatsAppHandler {
         contact_identifier: string,
         conversation_id: number,
         content: string,
-        attachments: any[] = []
+        attachments: any[] = [],
+        source_id: string = ''
     ) {
         if (!this.checkConfigInitialized()) return
         
@@ -462,23 +627,23 @@ export class WhatsAppHandler {
                     }))
                 })
                 
-                await this.chatwootClientApi!.createMessageWithAttachment(
-                    inbox_identifier,
-                    contact_identifier,
+                const send = await this.chatwootAppApi!.createMessageWithAttachment(
                     conversation_id,
                     content,
-                    attachments
+                    attachments,
+                    source_id
                 )
+                return send
             } else {
-                await this.chatwootClientApi!.createMessage(
-                    inbox_identifier,
-                    contact_identifier,
+                const send = await this.chatwootAppApi!.createMessage(
                     conversation_id,
-                    content
+                    content,
+                    'incoming',
+                    source_id
                 )
+                return send
             }
-            
-            console.log('Message sent successfully to Chatwoot')
+            // console.log('Message sent successfully to Chatwoot')
         } catch (error) {
             console.error('Error sending message to Chatwoot:', error)
         }

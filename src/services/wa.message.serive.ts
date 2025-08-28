@@ -1,4 +1,5 @@
 import { BaileysConnection } from './baileys.service'
+import { WAMessage } from '@whiskeysockets/baileys' 
 
 export class MessageService{
     private connection: BaileysConnection
@@ -44,6 +45,11 @@ export class MessageService{
             audio: buffer,
             mimetype: 'audio/ogg; codecs=opus'
         })
+    }
+    
+    async replyText(jid: string, text: string, quoted: WAMessage) {
+        if (!this.connection['sock']) throw new Error('Not Connected')
+        return await this.connection['sock']!.sendMessage(jid, {text},{quoted})
     }
 
     async readMessages(jid: string, messageKeys: { remoteJid: string, id: string, participant?: string }[]) {
