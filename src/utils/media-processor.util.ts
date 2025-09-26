@@ -30,6 +30,11 @@ const simpleLogger = {
  * Extract media information from WhatsApp message
  */
 export function getWhatsAppMediaInfo(message: any): WhatsAppMediaInfo {
+  // Validasi input message untuk menghindari error destructuring
+  if (!message || typeof message !== 'object') {
+    return { hasMedia: false };
+  }
+
   const { imageMessage, videoMessage, audioMessage, documentMessage, stickerMessage } = message;
   
   if (imageMessage) {

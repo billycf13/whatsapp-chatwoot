@@ -153,6 +153,9 @@ export class WhatsAppHandler {
         return Array.from(this.messageMapping.keys())
     }
 
+    /**
+     * Menangani pesan yang masuk dari WhatsApp
+     */
     public async handleMessageUpsert(messages: WAMessage[]) {
         if (!this.checkConfigInitialized()) return
         const sessionId = this.sessionId
@@ -160,14 +163,24 @@ export class WhatsAppHandler {
         if (getInboxIdentifier?.inboxIdentifier !== '') {
             const inbox_identifier = getInboxIdentifier?.inboxIdentifier!
             for (const message of messages) {
-                if (!message.key.fromMe && 
-                    !message.key.remoteJid?.endsWith('@g.us') && 
-                    !message.key.remoteJid?.includes('status@broadcast')) {
-                    
-                    await this.processIncomingMessage(message, inbox_identifier)
-                    
-                } else if (message.key.fromMe) {
-                    await this.processOutgoingMessage(message)
+                try {
+                    if (!message.key.fromMe && 
+                        !message.key.remoteJid?.endsWith('@g.us') && 
+                        !message.key.remoteJid?.includes('status@broadcast')) {
+                        
+                        await this.processIncomingMessage(message, inbox_identifier)
+                        
+                    } else if (message.key.fromMe) {
+                        await this.processOutgoingMessage(message)
+                    }
+                } catch (error) {
+                    console.error('Error processing message:', {
+                        messageId: message.key.id,
+                        remoteJid: message.key.remoteJid,
+                        error: error instanceof Error ? error.message : error
+                    });
+                    // Lanjutkan ke pesan berikutnya meskipun ada error
+                    continue;
                 }
             }
         }
@@ -465,9 +478,22 @@ export class WhatsAppHandler {
         }
     }
     
+    /**
+     * Memproses konten pesan WhatsApp dan mengekstrak teks serta attachment
+     */
     private async processMessageContent(message: WAMessage): Promise<{ messageContent: string, attachments: any[] }> {
         let messageContent = ''
         let attachments: any[] = []
+        
+        // Validasi message untuk menghindari error
+        if (!message || !message.message) {
+            console.warn('Message atau message.message tidak tersedia:', { 
+                hasMessage: !!message, 
+                hasMessageContent: !!(message && message.message),
+                messageId: message?.key?.id 
+            });
+            return { messageContent: '', attachments: [] };
+        }
         
         // Tangani pesan teks biasa
         if (message.message?.conversation) {
